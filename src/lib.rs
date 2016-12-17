@@ -1,17 +1,27 @@
 extern crate mio;
 extern crate futures;
+
+#[macro_use]
 extern crate tokio_core;
 extern crate zmq;
 
 use std::io;
 use std::os::unix::io::RawFd;
 
-use futures::{Async,Poll};
+use futures::{Async, AsyncSink, Poll, StartSend};
 use futures::stream::Stream;
+use futures::sink::Sink;
 
 use tokio_core::reactor::{Handle, PollEvented};
 use mio::{PollOpt, Ready, Token};
 use mio::unix::EventedFd;
+
+fn is_wouldblock<T>(r: &io::Result<T>) -> bool {
+    match *r {
+        Ok(_) => false,
+        Err(ref e) => e.kind() == io::ErrorKind::WouldBlock,
+    }
+}
 
 #[derive(Clone)]
 pub struct Context {
@@ -60,11 +70,15 @@ impl Socket {
          self.io.get_mut().0.set_subscribe(prefix).map_err(zmq_io_error)
     }
 
-    pub fn send(&self, msg: &[u8]) -> io::Result<()> {
-        if let Async::NotReady = self.io.poll_write() {
+    pub fn send<T>(&self, item: T) -> io::Result<()>
+        where T: Into<zmq::Message>
+    {
+        if self.io.poll_write().is_not_ready() {
             return Err(mio::would_block());
         }
-        match self.io.get_ref().0.send(msg, zmq::DONTWAIT) {
+        // TODO: Add support for `Into<io::Error>` for `zmq::Error`,
+        // then this gets simpler.
+        match self.io.get_ref().0.send(item, zmq::DONTWAIT) {
             Ok(()) => Ok(()),
             Err(zmq::Error::EAGAIN) => {
                 self.io.need_write();
@@ -75,7 +89,7 @@ impl Socket {
     }
 
     pub fn recv(&self) -> io::Result<zmq::Message> {
-        if let Async::NotReady = self.io.poll_read() {
+        if self.io.poll_read().is_not_ready() {
             return Err(mio::would_block());
         }
         match self.io.get_ref().0.recv_msg(zmq::DONTWAIT) {
@@ -86,6 +100,11 @@ impl Socket {
             }
             Err(e) => Err(zmq_io_error(e)),
         }
+    }
+
+    pub fn split(&mut self) -> (SocketStream, SocketSink) {
+        (SocketStream { socket: self, buffer: Vec::new() },
+         SocketSink { socket: self, buffer: Vec::new() })
     }
 
     // pub fn recv_iter(&self) -> io::Result<MultiRecv> {
@@ -105,12 +124,48 @@ impl Socket {
     // }
 }
 
-struct SocketStream<'a> {
+pub struct SocketStream<'a> {
     socket: &'a Socket,
     buffer: Vec<Vec<u8>>,
 }
 
-// TODO: Make this generic using tokio_core::easy::{Decode,Encode}.
+pub struct SocketSink<'a> {
+    socket: &'a Socket,
+    buffer: Vec<u8>,
+}
+
+// TODO: Make this generic using a codec
+impl<'a> Sink for SocketSink<'a> {
+    type SinkItem = Vec<u8>;
+    type SinkError = io::Error;
+
+    fn start_send(&mut self, item: Vec<u8>) -> StartSend<Vec<u8>, Self::SinkError> {
+        if self.buffer.len() > 0 {
+            try!(self.poll_complete());
+            if self.buffer.len() > 0 {
+                return Ok(AsyncSink::NotReady(item));
+            }
+        }
+        self.buffer = item;
+        Ok(AsyncSink::Ready)
+    }
+
+    fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
+        println!("polling sink for completion");
+        let r = self.socket.send(&self.buffer[..]);
+        if self.buffer.is_empty() {
+            return Ok(Async::Ready(()));
+        }
+        if is_wouldblock(&r) {
+            return Ok(Async::NotReady);
+        }
+        try!(r);
+        self.buffer.clear();
+        Ok(Async::Ready(()))
+    }
+}
+
+// TODO: Make this generic using a codec
 impl<'a> Stream for SocketStream<'a> {
     type Item = Vec<Vec<u8>>;
     type Error = io::Error;
@@ -121,18 +176,16 @@ impl<'a> Stream for SocketStream<'a> {
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         loop {
-            match self.socket.recv() {
-                Ok(msg) => {
-                    self.buffer.push(Vec::from(&msg[..]));
-                    if !msg.get_more() {
-                        return Ok(Async::Ready(Some(self.buffer.split_off(0))))
-                    }
-                },
-                Err(e) => match e.kind() {
-                    io::ErrorKind::WouldBlock => return Ok(Async::NotReady),
-                    _ => return Err(e),
-                },
+            let r = self.socket.recv();
+            if is_wouldblock(&r) {
+                return Ok(Async::NotReady);
             }
+            let msg = try!(r);
+            self.buffer.push(Vec::from(&msg[..]));
+            if !msg.get_more() {
+                return Ok(Async::Ready(Some(self.buffer.split_off(0))))
+            }
+            return Ok(Async::NotReady);
         }
     }
 

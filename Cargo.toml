@@ -1,6 +1,6 @@
 [package]
 name = "zmq-tokio"
-version = "0.1.0"
+version = "0.0.1"
 authors = ["Andreas Rottmann <a.rottmann@gmx.at>"]
 license = "MIT/Apache-2.0"
 description = "Tokio integation for zeromq"

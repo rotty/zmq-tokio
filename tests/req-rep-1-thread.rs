@@ -20,7 +20,7 @@ extern crate zmq_tokio;
 
 use std::io;
 
-use futures::{Future, Poll};
+use futures::{Future, Poll, Sink, Stream};
 use zmq_tokio::{Context,Socket};
 use tokio_core::reactor::Core;
 
@@ -31,7 +31,8 @@ macro_rules! t {
     })
 }
 
-fn main() {
+#[test]
+fn inproc_req_rep() {
     let mut l = Core::new().unwrap();
     let handle = l.handle();
 
@@ -42,15 +43,52 @@ fn main() {
     t!(rep.bind("inproc://requests"));
     t!(req.connect("inproc://requests"));
 
-    println!("setting up futures");
     let recv_request = RecvMessage { socket: &rep };
     let send_reply = SendMessage { socket: &rep };
     let send_request = SendMessage { socket: &req };
     let recv_reply = RecvMessage { socket: &req };
 
-    let client = send_request.and_then(|_| { println!("client: receiving reply"); recv_reply });
-    let server = recv_request.and_then(|_| { println!("server: sending reply"); send_reply });
+    let client = send_request.and_then(|_| recv_reply);
+    let server = recv_request.and_then(|_| send_reply);
 
+    l.run(client.join(server)).unwrap();
+}
+
+#[test]
+fn ipc_stream_req_rep() {
+    let mut l = Core::new().unwrap();
+    let handle = l.handle();
+
+    let ctx = Context::new();
+    let mut rep = t!(ctx.socket(zmq::REP, &handle));
+    let mut req = t!(ctx.socket(zmq::REQ, &handle));
+    t!(rep.bind("ipc:///run/user/1000/zmq.test"));
+    t!(req.connect("ipc:///run/user/1000/zmq.test"));
+
+    let server = {
+        let (requests, responses) = rep.split();
+        requests.fold(responses, move |responses, mut request| {
+            println!("request: {:?}", request);
+            // FIXME: multipart send support missing, this is a crude hack
+            let mut part0 = None;
+            for part in request.drain(0..1) {
+                part0 = Some(part);
+                break;
+            }
+            responses.send(part0.unwrap()) // assumes zero-part messages are impossible
+        })
+    };
+    let client = {
+        let (responses, requests): (zmq_tokio::SocketStream, zmq_tokio::SocketSink) = req.split();
+        let request: futures::sink::Send<zmq_tokio::SocketSink> = requests.send("Hello".into());
+        request.map(move |_| {
+            println!("request sent!");
+            responses.into_future().map(|(reply, _)| -> futures::future::Ok<(), io::Error> {
+                println!("reply: {:?}", reply);
+                futures::finished(())
+            })
+        })
+    };
     l.run(client.join(server)).unwrap();
 }
 
@@ -64,7 +102,7 @@ impl<'a> Future for SendMessage<'a> {
 
     fn poll(&mut self) -> Poll<(), io::Error> {
         let sock = self.socket;
-        try_nb!(sock.send(b"1234"));
+        try_nb!(sock.send("1234"));
         Ok(().into())
     }
 }
