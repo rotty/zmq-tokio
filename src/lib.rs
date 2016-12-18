@@ -2,6 +2,9 @@ extern crate mio;
 extern crate futures;
 
 #[macro_use]
+extern crate log;
+
+#[macro_use]
 extern crate tokio_core;
 extern crate zmq;
 
@@ -34,17 +37,58 @@ impl Context {
     }
 
     pub fn socket(&self, typ: zmq::SocketType, handle: &Handle) -> io::Result<Socket> {
-        let socket = try!(self.ctx.socket(typ).map_err(zmq_io_error));
+        let socket = try!(self.ctx.socket(typ));
         Socket::new(socket, handle)
     }
 }
 
-// mio integration, might be pushed down to rust-zmq itself?
-struct ZmqSocket(zmq::Socket);
+// mio integration, should probably be put into its own crate eventually
+struct ZmqSocket {
+    inner: zmq::Socket,
+}
 
 impl ZmqSocket {
+    fn new(socket: zmq::Socket) -> Self {
+        ZmqSocket { inner: socket }
+    }
+
     fn as_raw_fd(&self) -> io::Result<RawFd> {
-        Ok(try!(self.0.get_fd().map_err(zmq_io_error)))
+        let fd = try!(self.inner.get_fd());
+        trace!("socket raw FD: {}", fd);
+        Ok(fd)
+    }
+
+    pub fn bind(&mut self, address: &str) -> io::Result<()> {
+         self.inner.bind(address).map_err(|e| e.into())
+    }
+
+    pub fn connect(&mut self, address: &str) -> io::Result<()> {
+         self.inner.connect(address).map_err(|e| e.into())
+    }
+
+    pub fn set_subscribe(&self, prefix: &[u8]) -> io::Result<()> {
+         self.inner.set_subscribe(prefix).map_err(|e| e.into())
+    }
+
+    pub fn poll_events(&self) -> io::Result<Ready> {
+        let events = try!(self.inner.get_events());
+        let ready = |mask: zmq::PollEvents, value| {
+            if mask.contains(events) { value } else { Ready::none() }
+        };
+        Ok(ready(zmq::POLLOUT, Ready::writable()) |
+           ready(zmq::POLLIN, Ready::readable()))
+    }
+
+    pub fn send<T>(&self, item: T) -> io::Result<()>
+        where T: Into<zmq::Message>
+    {
+        let r = self.inner.send(item, zmq::DONTWAIT).map_err(|e| e.into());
+        r
+    }
+
+    pub fn recv(&self) -> io::Result<zmq::Message> {
+        let r = self.inner.recv_msg(zmq::DONTWAIT).map_err(|e| e.into());
+        r
     }
 }
 
@@ -54,57 +98,59 @@ pub struct Socket {
 
 impl Socket {
     fn new(socket: zmq::Socket, handle: &Handle) -> io::Result<Socket> {
-        let io = try!(PollEvented::new(ZmqSocket(socket), handle));
+        let io = try!(PollEvented::new(ZmqSocket::new(socket), handle));
         Ok(Socket { io: io })
     }
 
     pub fn bind(&mut self, address: &str) -> io::Result<()> {
-         self.io.get_mut().0.bind(address).map_err(zmq_io_error)
+         self.io.get_mut().bind(address)
     }
 
     pub fn connect(&mut self, address: &str) -> io::Result<()> {
-         self.io.get_mut().0.connect(address).map_err(zmq_io_error)
+         self.io.get_mut().connect(address)
     }
 
     pub fn set_subscribe(&mut self, prefix: &[u8]) -> io::Result<()> {
-         self.io.get_mut().0.set_subscribe(prefix).map_err(zmq_io_error)
+         self.io.get_ref().set_subscribe(prefix)
     }
 
-    pub fn send<T>(&self, item: T) -> io::Result<()>
+    pub fn send<T>(&mut self, item: T) -> io::Result<()>
         where T: Into<zmq::Message>
     {
-        if self.io.poll_write().is_not_ready() {
+        trace!("entering send");
+        if !try!(self.poll_events()).is_writable() {
+            trace!("send - not ready");
             return Err(mio::would_block());
         }
-        // TODO: Add support for `Into<io::Error>` for `zmq::Error`,
-        // then this gets simpler.
-        match self.io.get_ref().0.send(item, zmq::DONTWAIT) {
-            Ok(()) => Ok(()),
-            Err(zmq::Error::EAGAIN) => {
-                self.io.need_write();
-                Err(mio::would_block())
-            }
-            Err(e) => Err(zmq_io_error(e))
+        trace!("attempting send");
+        let r = self.io.get_ref().send(item);
+        if is_wouldblock(&r) {
+            self.io.need_read();
         }
+        trace!("send - {:?}", r);
+        r
     }
 
-    pub fn recv(&self) -> io::Result<zmq::Message> {
-        if self.io.poll_read().is_not_ready() {
+    pub fn recv(&mut self) -> io::Result<zmq::Message> {
+        trace!("entering recv");
+        if !try!(self.io.get_ref().poll_events()).is_readable() {
+            trace!("recv - not ready");
             return Err(mio::would_block());
         }
-        match self.io.get_ref().0.recv_msg(zmq::DONTWAIT) {
-            Ok(msg) => Ok(msg),
-            Err(zmq::Error::EAGAIN) => {
-                self.io.need_read();
-                Err(mio::would_block())
-            }
-            Err(e) => Err(zmq_io_error(e)),
+        let r = self.io.get_ref().recv();
+        if is_wouldblock(&r) {
+            self.io.need_read();
         }
+        trace!("recv - {:?}", r);
+        r
     }
 
-    pub fn split(&mut self) -> (SocketStream, SocketSink) {
-        (SocketStream { socket: self, buffer: Vec::new() },
-         SocketSink { socket: self, buffer: Vec::new() })
+    fn poll_events(&mut self) -> io::Result<Ready> {
+        self.io.get_ref().poll_events()
+    }
+
+    pub fn framed(self) -> SocketFramed {
+        SocketFramed::new(self)
     }
 
     // pub fn recv_iter(&self) -> io::Result<MultiRecv> {
@@ -124,49 +170,53 @@ impl Socket {
     // }
 }
 
-pub struct SocketStream<'a> {
-    socket: &'a Socket,
-    buffer: Vec<Vec<u8>>,
+pub struct SocketFramed {
+    socket: Socket,
+    rd: Vec<Vec<u8>>,
+    wr: Vec<u8>,
 }
 
-pub struct SocketSink<'a> {
-    socket: &'a Socket,
-    buffer: Vec<u8>,
+impl SocketFramed {
+    fn new(socket: Socket) -> Self {
+        SocketFramed {
+            socket: socket,
+            rd: Vec::new(),
+            wr: Vec::new(),
+        }
+    }
 }
 
 // TODO: Make this generic using a codec
-impl<'a> Sink for SocketSink<'a> {
+impl Sink for SocketFramed {
     type SinkItem = Vec<u8>;
     type SinkError = io::Error;
 
     fn start_send(&mut self, item: Vec<u8>) -> StartSend<Vec<u8>, Self::SinkError> {
-        if self.buffer.len() > 0 {
+        trace!("start send ({:?})", item);
+        if self.wr.len() > 0 {
             try!(self.poll_complete());
-            if self.buffer.len() > 0 {
+            if self.wr.len() > 0 {
                 return Ok(AsyncSink::NotReady(item));
             }
         }
-        self.buffer = item;
+        self.wr = item;
         Ok(AsyncSink::Ready)
     }
 
     fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
-        println!("polling sink for completion");
-        let r = self.socket.send(&self.buffer[..]);
-        if self.buffer.is_empty() {
+        trace!("polling sink for completion ({} bytes)", self.wr.len());
+        if self.wr.is_empty() {
             return Ok(Async::Ready(()));
         }
-        if is_wouldblock(&r) {
-            return Ok(Async::NotReady);
-        }
-        try!(r);
-        self.buffer.clear();
+        let r = try_nb!(self.socket.send(&self.wr[..]));
+        trace!("send complete: {:?}", r);
+        self.wr.clear();
         Ok(Async::Ready(()))
     }
 }
 
 // TODO: Make this generic using a codec
-impl<'a> Stream for SocketStream<'a> {
+impl Stream for SocketFramed {
     type Item = Vec<Vec<u8>>;
     type Error = io::Error;
 
@@ -175,18 +225,22 @@ impl<'a> Stream for SocketStream<'a> {
     // }
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        loop {
-            let r = self.socket.recv();
-            if is_wouldblock(&r) {
-                return Ok(Async::NotReady);
-            }
-            let msg = try!(r);
-            self.buffer.push(Vec::from(&msg[..]));
-            if !msg.get_more() {
-                return Ok(Async::Ready(Some(self.buffer.split_off(0))))
-            }
+        trace!("SocketFramed::poll()");
+        let r = self.socket.recv();
+        if is_wouldblock(&r) {
             return Ok(Async::NotReady);
         }
+        let msg = try!(r);
+        if self.rd.len() == 0 && msg.len() == 0 {
+            return Ok(Async::Ready(None));
+        }
+        self.rd.push(Vec::from(&msg[..]));
+        while msg.get_more() {
+            let r = self.socket.recv();
+            let msg = try!(r);
+            self.rd.push(Vec::from(&msg[..]));
+        }
+        return Ok(Async::Ready(Some(self.rd.split_off(0))))
     }
 
     // fn poll_write(&mut self) -> Async<()> {
@@ -215,32 +269,26 @@ impl<'a> Stream for SocketStream<'a> {
 
 //     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
 //         FramedIo::read(self)
-//     }    
+//     }
 // }
-
-// As ZMQ uses POSIX errno values (mostly), `zmq:Error` should
-// some API that makes this function obsolete.
-fn zmq_io_error(e: zmq::Error) -> io::Error {
-    match e {
-        zmq::Error::EAGAIN => mio::would_block(),
-        _ => io::Error::new(io::ErrorKind::Other, e),
-    }
-}
 
 impl mio::Evented for ZmqSocket {
     fn register(&self, poll: &mio::Poll, token: Token, interest: Ready, opts: PollOpt) -> io::Result<()> {
         let fd = try!(self.as_raw_fd());
-        poll.register(&EventedFd(&fd), token, interest, opts)
+        trace!("ZmqSocket::register: fd={}", fd);
+        EventedFd(&fd).register(poll, token, interest, opts)
     }
 
     fn reregister(&self, poll: &mio::Poll, token: Token, interest: Ready, opts: PollOpt) -> io::Result<()> {
         let fd = try!(self.as_raw_fd());
-        poll.reregister(&EventedFd(&fd), token, interest, opts)
+        trace!("ZmqSocket::reregister: fd={}", fd);
+        EventedFd(&fd).reregister(poll, token, interest, opts)
     }
 
     fn deregister(&self, poll: &mio::Poll) -> io::Result<()> {
         let fd = try!(self.as_raw_fd());
-        poll.deregister(&EventedFd(&fd))
+        trace!("ZmqSocket::deregister: fd={}", fd);
+        EventedFd(&fd).deregister(poll)
     }
 }
 
