@@ -1,17 +1,16 @@
 [package]
-name = "zmq-tokio"
+name = "zmq-mio"
 version = "0.0.1"
 authors = ["Andreas Rottmann <a.rottmann@gmx.at>"]
 license = "MIT/Apache-2.0"
-description = "Tokio integation for zeromq"
+description = "mio integation for zeromq"
 repository = "https://github.com/rotty/zmq-tokio"
 readme = "README.md"
 
 [dependencies]
-mio = "0.6.0"
-tokio-core = "0.1"
-futures = "0.1.3"
-zmq = { git = "https://github.com/erickt/rust-zmq" }
 log = "0.3"
 env_logger = "0.3"
-zmq_mio = { path = "zmq-mio" }
+futures = "0.1.3"
+mio = "0.6.0"
+zmq = { git = "https://github.com/erickt/rust-zmq" }
+
