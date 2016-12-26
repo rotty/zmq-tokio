@@ -7,17 +7,16 @@ extern crate log;
 #[macro_use]
 extern crate tokio_core;
 extern crate zmq;
+extern crate zmq_mio;
 
 use std::io;
-use std::os::unix::io::RawFd;
 
 use futures::{Async, AsyncSink, Poll, StartSend};
 use futures::stream::Stream;
 use futures::sink::Sink;
 
 use tokio_core::reactor::{Handle, PollEvented};
-use mio::{PollOpt, Ready, Token};
-use mio::unix::EventedFd;
+use mio::Ready;
 
 fn is_wouldblock<T>(r: &io::Result<T>) -> bool {
     match *r {
@@ -42,63 +41,14 @@ impl Context {
     }
 }
 
-// mio integration, should probably be put into its own crate eventually
-struct ZmqSocket {
-    inner: zmq::Socket,
-}
-
-impl ZmqSocket {
-    fn new(socket: zmq::Socket) -> Self {
-        ZmqSocket { inner: socket }
-    }
-
-    fn as_raw_fd(&self) -> io::Result<RawFd> {
-        let fd = try!(self.inner.get_fd());
-        trace!("socket raw FD: {}", fd);
-        Ok(fd)
-    }
-
-    pub fn bind(&mut self, address: &str) -> io::Result<()> {
-         self.inner.bind(address).map_err(|e| e.into())
-    }
-
-    pub fn connect(&mut self, address: &str) -> io::Result<()> {
-         self.inner.connect(address).map_err(|e| e.into())
-    }
-
-    pub fn set_subscribe(&self, prefix: &[u8]) -> io::Result<()> {
-         self.inner.set_subscribe(prefix).map_err(|e| e.into())
-    }
-
-    pub fn poll_events(&self) -> io::Result<Ready> {
-        let events = try!(self.inner.get_events());
-        let ready = |mask: zmq::PollEvents, value| {
-            if mask.contains(events) { value } else { Ready::none() }
-        };
-        Ok(ready(zmq::POLLOUT, Ready::writable()) |
-           ready(zmq::POLLIN, Ready::readable()))
-    }
-
-    pub fn send<T>(&self, item: T) -> io::Result<()>
-        where T: Into<zmq::Message>
-    {
-        let r = self.inner.send(item, zmq::DONTWAIT).map_err(|e| e.into());
-        r
-    }
-
-    pub fn recv(&self) -> io::Result<zmq::Message> {
-        let r = self.inner.recv_msg(zmq::DONTWAIT).map_err(|e| e.into());
-        r
-    }
-}
 
 pub struct Socket {
-    io: PollEvented<ZmqSocket>,
+    io: PollEvented<zmq_mio::Socket>,
 }
 
 impl Socket {
     fn new(socket: zmq::Socket, handle: &Handle) -> io::Result<Socket> {
-        let io = try!(PollEvented::new(ZmqSocket::new(socket), handle));
+        let io = try!(PollEvented::new(zmq_mio::Socket::new(socket), handle));
         Ok(Socket { io: io })
     }
 
@@ -271,26 +221,6 @@ impl Stream for SocketFramed {
 //         FramedIo::read(self)
 //     }
 // }
-
-impl mio::Evented for ZmqSocket {
-    fn register(&self, poll: &mio::Poll, token: Token, interest: Ready, opts: PollOpt) -> io::Result<()> {
-        let fd = try!(self.as_raw_fd());
-        trace!("ZmqSocket::register: fd={}", fd);
-        EventedFd(&fd).register(poll, token, interest, opts)
-    }
-
-    fn reregister(&self, poll: &mio::Poll, token: Token, interest: Ready, opts: PollOpt) -> io::Result<()> {
-        let fd = try!(self.as_raw_fd());
-        trace!("ZmqSocket::reregister: fd={}", fd);
-        EventedFd(&fd).reregister(poll, token, interest, opts)
-    }
-
-    fn deregister(&self, poll: &mio::Poll) -> io::Result<()> {
-        let fd = try!(self.as_raw_fd());
-        trace!("ZmqSocket::deregister: fd={}", fd);
-        EventedFd(&fd).deregister(poll)
-    }
-}
 
 #[cfg(test)]
 mod tests {
