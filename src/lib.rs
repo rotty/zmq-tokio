@@ -9,14 +9,19 @@ extern crate tokio_core;
 extern crate zmq;
 extern crate zmq_mio;
 
+pub mod codec;
+
 use std::io;
 
 use futures::{Async, AsyncSink, Poll, StartSend};
 use futures::stream::Stream;
 use futures::sink::Sink;
-
-use tokio_core::reactor::{Handle, PollEvented};
 use mio::Ready;
+use tokio_core::reactor::{Handle, PollEvented};
+
+use zmq::Message;
+
+use codec::MessageCodec;
 
 fn is_wouldblock<T>(r: &io::Result<T>) -> bool {
     match *r {
@@ -98,59 +103,62 @@ impl Socket {
         self.io.get_ref().poll_events()
     }
 
-    pub fn framed(self) -> SocketFramed {
-        SocketFramed::new(self)
+    pub fn framed<C>(self, codec: C) -> SocketFramed<C> {
+        SocketFramed::new(self, codec)
     }
 }
 
-pub struct SocketFramed {
+pub struct SocketFramed<C> {
     socket: Socket,
-    rd: Vec<Vec<u8>>,
-    wr: Vec<u8>,
+    codec: C,
+    rd: Vec<Message>,
+    wr: Option<Message>,
 }
 
-impl SocketFramed {
-    fn new(socket: Socket) -> Self {
+impl<C> SocketFramed<C> {
+    fn new(socket: Socket, codec: C) -> Self {
         SocketFramed {
             socket: socket,
+            codec: codec,
             rd: Vec::new(),
-            wr: Vec::new(),
+            wr: None,
         }
     }
 }
 
 // TODO: Make this generic using a codec
-impl Sink for SocketFramed {
-    type SinkItem = Vec<u8>;
+impl<C: MessageCodec> Sink for SocketFramed<C> {
+    type SinkItem = C::Out;
     type SinkError = io::Error;
 
-    fn start_send(&mut self, item: Vec<u8>) -> StartSend<Vec<u8>, Self::SinkError> {
-        trace!("start send ({:?})", item);
-        if self.wr.len() > 0 {
+    fn start_send(&mut self, item: C::Out) -> StartSend<C::Out, Self::SinkError> {
+        //trace!("start send ({:?})", item);
+        if self.wr.is_some() {
             try!(self.poll_complete());
-            if self.wr.len() > 0 {
+            if self.wr.is_some() {
                 return Ok(AsyncSink::NotReady(item));
             }
         }
-        self.wr = item;
+        self.wr = Some(try!(self.codec.encode(item)));
         Ok(AsyncSink::Ready)
     }
 
     fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
-        trace!("polling sink for completion ({} bytes)", self.wr.len());
-        if self.wr.is_empty() {
-            return Ok(Async::Ready(()));
+        //trace!("polling sink for completion ({:?})", self.wr.map(|msg| msg.len()));
+        match self.wr.take() {
+            None => Ok(Async::Ready(())),
+            Some(msg) => {
+                let r = try_nb!(self.socket.send(&msg[..]));
+                trace!("send complete: {:?}", r);
+                Ok(Async::Ready(()))
+            },
         }
-        let r = try_nb!(self.socket.send(&self.wr[..]));
-        trace!("send complete: {:?}", r);
-        self.wr.clear();
-        Ok(Async::Ready(()))
     }
 }
 
 // TODO: Make this generic using a codec
-impl Stream for SocketFramed {
-    type Item = Vec<Vec<u8>>;
+impl<C> Stream for SocketFramed<C> {
+    type Item = Vec<Message>;
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
@@ -163,11 +171,13 @@ impl Stream for SocketFramed {
         if self.rd.len() == 0 && msg.len() == 0 {
             return Ok(Async::Ready(None));
         }
-        self.rd.push(Vec::from(&msg[..]));
-        while msg.get_more() {
+        let mut more = msg.get_more();
+        self.rd.push(msg);
+        while more {
             let r = self.socket.recv();
             let msg = try!(r);
-            self.rd.push(Vec::from(&msg[..]));
+            more = msg.get_more();
+            self.rd.push(msg);
         }
         return Ok(Async::Ready(Some(self.rd.split_off(0))))
     }

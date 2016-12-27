@@ -25,6 +25,7 @@ use std::io;
 use futures::{stream, Future, Sink, Stream};
 use futures::future::BoxFuture;
 use zmq_tokio::{Context, Socket};
+use zmq_tokio::codec::NullCodec;
 use tokio_core::reactor::Core;
 
 macro_rules! t {
@@ -38,7 +39,7 @@ const SOCKET_ADDRESS: &'static str = "tcp://127.0.0.1:3294";
 
 fn stream_server(rep: Socket, count: u64) -> BoxFuture<(), io::Error> {
     trace!("server started");
-    let (responses, requests) = rep.framed().split();
+    let (responses, requests) = rep.framed(NullCodec).split();
     requests.take(count).fold(responses, |responses, mut request| {
         // FIXME: multipart send support missing, this is a crude hack
         let mut part0 = None;
@@ -52,8 +53,8 @@ fn stream_server(rep: Socket, count: u64) -> BoxFuture<(), io::Error> {
 }
 
 fn stream_client(req: Socket, count: u64) -> BoxFuture<(), io::Error> {
-    stream::iter((0..count).map(Ok)).fold(req.framed().split(), move |(requests, responses), i| {
-        requests.send(format!("Hello {}", i).into()).and_then(move |requests| {
+    stream::iter((0..count).map(Ok)).fold(req.framed(NullCodec).split(), move |(requests, responses), i| {
+        requests.send(format!("Hello {}", i).as_str().into()).and_then(move |requests| {
             trace!("request sent!");
             let show_reply = responses.into_future().and_then(move |(reply, rest)| {
                 trace!("reply: {:?}", reply);
