@@ -1,5 +1,5 @@
-extern crate mio;
 extern crate futures;
+extern crate mio;
 
 #[macro_use]
 extern crate log;
@@ -32,7 +32,9 @@ pub struct Context {
 
 impl Context {
     pub fn new() -> Context {
-        Context { ctx: zmq::Context::new() }
+        Context {
+            ctx: zmq::Context::new(),
+        }
     }
 
     pub fn socket(&self, typ: zmq::SocketType, handle: &Handle) -> io::Result<Socket> {
@@ -52,19 +54,20 @@ impl Socket {
     }
 
     pub fn bind(&mut self, address: &str) -> io::Result<()> {
-         self.io.get_mut().bind(address)
+        self.io.get_mut().bind(address)
     }
 
     pub fn connect(&mut self, address: &str) -> io::Result<()> {
-         self.io.get_mut().connect(address)
+        self.io.get_mut().connect(address)
     }
 
     pub fn set_subscribe(&mut self, prefix: &[u8]) -> io::Result<()> {
-         self.io.get_ref().set_subscribe(prefix)
+        self.io.get_ref().set_subscribe(prefix)
     }
 
     pub fn send<T>(&mut self, item: T) -> io::Result<()>
-        where T: Into<zmq::Message>
+    where
+        T: Into<zmq::Message>,
     {
         trace!("entering send");
         if !try!(self.poll_events()).is_writable() {
@@ -169,6 +172,6 @@ impl Stream for SocketFramed {
             let msg = try!(r);
             self.rd.push(Vec::from(&msg[..]));
         }
-        return Ok(Async::Ready(Some(self.rd.split_off(0))))
+        return Ok(Async::Ready(Some(self.rd.split_off(0))));
     }
 }
