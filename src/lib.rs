@@ -48,7 +48,7 @@ pub struct Socket {
 }
 
 impl Socket {
-    fn new(socket: zmq::Socket, handle: &Handle) -> io::Result<Socket> {
+    pub fn new(socket: zmq::Socket, handle: &Handle) -> io::Result<Socket> {
         let io = try!(PollEvented::new(zmq_mio::Socket::new(socket), handle));
         Ok(Socket { io: io })
     }
