@@ -55,14 +55,14 @@ impl Socket {
     pub fn poll_events(&self) -> io::Result<Ready> {
         let events = try!(self.inner.get_events());
         let ready = |mask: zmq::PollEvents, value| {
-            if mask.contains(events) { value } else { Ready::none() }
+            if mask.contains(events) { value } else { Ready::empty() }
         };
         Ok(ready(zmq::POLLOUT, Ready::writable()) |
            ready(zmq::POLLIN, Ready::readable()))
     }
 
     pub fn send<T>(&self, item: T) -> io::Result<()>
-        where T: Into<zmq::Message>
+        where T: zmq::Sendable
     {
         let r = self.inner.send(item, zmq::DONTWAIT).map_err(|e| e.into());
         r
