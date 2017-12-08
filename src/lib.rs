@@ -109,6 +109,7 @@ impl Socket {
         let r = self.io.get_ref().recv(flags);
         if is_wouldblock(&r) {
             self.io.need_read();
+            return Err(mio::would_block());
         }
         trace!("recv - {:?}", r);
         r
@@ -184,8 +185,11 @@ impl Stream for SocketFramed {
             return Ok(Async::Ready(None));
         }
         self.rd.push(Vec::from(&msg[..]));
-        while msg.get_more() {
+        while self.socket.io.get_ref().get_ref().get_rcvmore().unwrap() {
             let r = self.socket.recv(0);
+            if is_wouldblock(&r) {
+                break;
+            }
             let msg = try!(r);
             self.rd.push(Vec::from(&msg[..]));
         }
