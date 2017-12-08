@@ -65,7 +65,7 @@ impl Socket {
         self.io.get_ref().set_subscribe(prefix)
     }
 
-    pub fn send<T>(&self, item: T) -> io::Result<()>
+    pub fn send<T>(&self, item: T, flags: i32) -> io::Result<()>
     where
         T: Into<zmq::Message>,
     {
@@ -75,7 +75,7 @@ impl Socket {
             return Err(mio::would_block());
         }
         trace!("attempting send");
-        let r = self.io.get_ref().send(item);
+        let r = self.io.get_ref().send(item, flags);
         if is_wouldblock(&r) {
             self.io.need_read();
         }
@@ -83,13 +83,13 @@ impl Socket {
         r
     }
 
-    pub fn recv(&self) -> io::Result<zmq::Message> {
+    pub fn recv(&self, flags: i32) -> io::Result<zmq::Message> {
         trace!("entering recv");
         if !try!(self.io.get_ref().poll_events()).is_readable() {
             trace!("recv - not ready");
             return Err(mio::would_block());
         }
-        let r = self.io.get_ref().recv();
+        let r = self.io.get_ref().recv(flags);
         if is_wouldblock(&r) {
             self.io.need_read();
         }
@@ -144,7 +144,7 @@ impl Sink for SocketFramed {
         if self.wr.is_empty() {
             return Ok(Async::Ready(()));
         }
-        let r = try_nb!(self.socket.send(&self.wr[..]));
+        let r = try_nb!(self.socket.send(&self.wr[..], 0));
         trace!("send complete: {:?}", r);
         self.wr.clear();
         Ok(Async::Ready(()))
@@ -158,7 +158,7 @@ impl Stream for SocketFramed {
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         trace!("SocketFramed::poll()");
-        let r = self.socket.recv();
+        let r = self.socket.recv(0);
         if is_wouldblock(&r) {
             return Ok(Async::NotReady);
         }
@@ -168,7 +168,7 @@ impl Stream for SocketFramed {
         }
         self.rd.push(Vec::from(&msg[..]));
         while msg.get_more() {
-            let r = self.socket.recv();
+            let r = self.socket.recv(0);
             let msg = try!(r);
             self.rd.push(Vec::from(&msg[..]));
         }
