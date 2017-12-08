@@ -44,7 +44,7 @@ impl EchoServer {
     }
 
     fn writable(&mut self, poll: &Poll) -> io::Result<()> {
-        match self.sock.send(self.msg.take().unwrap()) {
+        match self.sock.send(self.msg.take().unwrap(), 0) {
             Ok(_) => {
                 self.interest.insert(Ready::readable());
                 self.interest.remove(Ready::writable());
@@ -62,7 +62,7 @@ impl EchoServer {
     }
 
     fn readable(&mut self, poll: &Poll) -> io::Result<()> {
-        match self.sock.recv() {
+        match self.sock.recv(0) {
             Ok(msg) => {
                 self.msg = Some(msg);
 
@@ -110,7 +110,7 @@ impl EchoClient {
     }
 
     fn readable(&mut self, poll: &Poll) -> io::Result<()> {
-        match self.sock.recv() {
+        match self.sock.recv(0) {
             Ok(msg) => {
                 let n = msg.len();
                 assert_eq!(&self.rx[..n], &msg[..n]);
@@ -137,7 +137,7 @@ impl EchoClient {
     }
 
     fn writable(&mut self, poll: &Poll) -> io::Result<()> {
-        match self.sock.send(self.tx) {
+        match self.sock.send(self.tx, 0) {
             Ok(_) => {
                 self.tx = &self.tx[self.tx.len()..];
                 self.interest.insert(Ready::readable());

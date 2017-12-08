@@ -61,15 +61,15 @@ impl Socket {
            ready(zmq::POLLIN, Ready::readable()))
     }
 
-    pub fn send<T>(&self, item: T) -> io::Result<()>
+    pub fn send<T>(&self, item: T, flags: i32) -> io::Result<()>
         where T: zmq::Sendable
     {
-        let r = self.inner.send(item, zmq::DONTWAIT).map_err(|e| e.into());
+        let r = self.inner.send(item, zmq::DONTWAIT | flags).map_err(|e| e.into());
         r
     }
 
-    pub fn recv(&self) -> io::Result<zmq::Message> {
-        let r = self.inner.recv_msg(zmq::DONTWAIT).map_err(|e| e.into());
+    pub fn recv(&self, flags: i32) -> io::Result<zmq::Message> {
+        let r = self.inner.recv_msg(zmq::DONTWAIT | flags).map_err(|e| e.into());
         r
     }
 }
