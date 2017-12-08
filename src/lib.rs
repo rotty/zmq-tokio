@@ -53,19 +53,19 @@ impl Socket {
         Ok(Socket { io: io })
     }
 
-    pub fn bind(&mut self, address: &str) -> io::Result<()> {
-        self.io.get_mut().bind(address)
+    pub fn bind(&self, address: &str) -> io::Result<()> {
+        self.io.get_ref().bind(address)
     }
 
-    pub fn connect(&mut self, address: &str) -> io::Result<()> {
-        self.io.get_mut().connect(address)
+    pub fn connect(&self, address: &str) -> io::Result<()> {
+        self.io.get_ref().connect(address)
     }
 
-    pub fn set_subscribe(&mut self, prefix: &[u8]) -> io::Result<()> {
+    pub fn set_subscribe(&self, prefix: &[u8]) -> io::Result<()> {
         self.io.get_ref().set_subscribe(prefix)
     }
 
-    pub fn send<T>(&mut self, item: T) -> io::Result<()>
+    pub fn send<T>(&self, item: T) -> io::Result<()>
     where
         T: Into<zmq::Message>,
     {
@@ -83,7 +83,7 @@ impl Socket {
         r
     }
 
-    pub fn recv(&mut self) -> io::Result<zmq::Message> {
+    pub fn recv(&self) -> io::Result<zmq::Message> {
         trace!("entering recv");
         if !try!(self.io.get_ref().poll_events()).is_readable() {
             trace!("recv - not ready");
@@ -97,7 +97,7 @@ impl Socket {
         r
     }
 
-    fn poll_events(&mut self) -> io::Result<Ready> {
+    fn poll_events(&self) -> io::Result<Ready> {
         self.io.get_ref().poll_events()
     }
 

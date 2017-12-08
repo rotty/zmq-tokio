@@ -40,11 +40,11 @@ impl Socket {
         Ok(fd)
     }
 
-    pub fn bind(&mut self, address: &str) -> io::Result<()> {
+    pub fn bind(&self, address: &str) -> io::Result<()> {
          self.inner.bind(address).map_err(|e| e.into())
     }
 
-    pub fn connect(&mut self, address: &str) -> io::Result<()> {
+    pub fn connect(&self, address: &str) -> io::Result<()> {
          self.inner.connect(address).map_err(|e| e.into())
     }
 

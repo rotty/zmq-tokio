@@ -79,7 +79,7 @@ fn test_stream() {
     let handle = l.handle();
 
     let ctx = Context::new();
-    let mut rep = t!(ctx.socket(zmq::REP, &handle));
+    let rep = t!(ctx.socket(zmq::REP, &handle));
     t!(rep.bind(SOCKET_ADDRESS));
 
     let client = std::thread::spawn(move || {
@@ -87,7 +87,7 @@ fn test_stream() {
         let handle = l.handle();
 
         let ctx = Context::new();
-        let mut req = t!(ctx.socket(zmq::REQ, &handle));
+        let req = t!(ctx.socket(zmq::REQ, &handle));
         t!(req.connect(SOCKET_ADDRESS));
 
         let client = stream_client(req, 1000);
