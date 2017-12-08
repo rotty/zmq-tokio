@@ -1,3 +1,7 @@
+//! ØMQ (ZeroMQ) for tokio
+//! ======================
+//!
+//! Run ØMQ sockets using `tokio` reactors, futures, etc.
 extern crate futures;
 extern crate mio;
 
@@ -18,6 +22,8 @@ use futures::sink::Sink;
 use tokio_core::reactor::{Handle, PollEvented};
 use mio::Ready;
 
+// Convenience function to determine if an I/O operation would block
+// if the error kind is `io::ErrorKind::WouldBlock`. Returns a `boolean`.
 fn is_wouldblock<T>(r: &io::Result<T>) -> bool {
     match *r {
         Ok(_) => false,
@@ -25,6 +31,8 @@ fn is_wouldblock<T>(r: &io::Result<T>) -> bool {
     }
 }
 
+/// Wrapper for `zmq::Context`.
+// TODO: maybe we don't need this
 #[derive(Clone)]
 pub struct Context {
     ctx: zmq::Context,
@@ -43,28 +51,36 @@ impl Context {
     }
 }
 
+/// Poll-evented ØMQ socket. Can be used directly on transports implementing
+/// `futures::stream::Stream` and `futures::sink::Sink`.
 pub struct Socket {
     io: PollEvented<zmq_mio::Socket>,
 }
 
 impl Socket {
+    /// Create a new poll-evented ØMQ socket, along with a tokio reactor handle
+    /// to drive its event-loop.
     pub fn new(socket: zmq::Socket, handle: &Handle) -> io::Result<Socket> {
         let io = try!(PollEvented::new(zmq_mio::Socket::new(socket), handle));
         Ok(Socket { io: io })
     }
 
+    /// Bind the underlying socket to the given address.
     pub fn bind(&self, address: &str) -> io::Result<()> {
         self.io.get_ref().bind(address)
     }
 
+    /// Connect the underlying socket to the given address.
     pub fn connect(&self, address: &str) -> io::Result<()> {
         self.io.get_ref().connect(address)
     }
 
+    /// Subscribe the underlying socket to the given prefix.
     pub fn set_subscribe(&self, prefix: &[u8]) -> io::Result<()> {
         self.io.get_ref().set_subscribe(prefix)
     }
 
+    /// Non-blocking send a `zmq::Message`.
     pub fn send<T>(&self, item: T, flags: i32) -> io::Result<()>
     where
         T: Into<zmq::Message>,
@@ -83,6 +99,7 @@ impl Socket {
         r
     }
 
+    /// Non-blocking recv a `zmq::Message`.
     pub fn recv(&self, flags: i32) -> io::Result<zmq::Message> {
         trace!("entering recv");
         if !try!(self.io.get_ref().poll_events()).is_readable() {
