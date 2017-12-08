@@ -44,6 +44,12 @@ impl Socket {
         Ok(fd)
     }
 
+    /// Returns a reference to the underlying `zmq::Socket`.
+    /// Useful for setting socket options at runtime.
+    pub fn get_ref(&self) -> &zmq::Socket {
+        &self.inner
+    }
+
     /// Bind the socket to the given address.
     pub fn bind(&self, address: &str) -> io::Result<()> {
          self.inner.bind(address).map_err(|e| e.into())
