@@ -96,6 +96,31 @@ impl Socket {
         let r = self.inner.recv_msg(zmq::DONTWAIT | flags).map_err(|e| e.into());
         r
     }
+
+    pub fn recv_into(&self, mut buf: &mut [u8]) -> io::Result<usize> {
+        let r = self.inner.recv_into(&mut buf, zmq::DONTWAIT).map_err(|e| e.into());
+        r
+    }
+}
+
+unsafe impl Send for Socket {}
+
+impl io::Read for Socket {
+    fn read(&mut self, mut buf: &mut [u8]) -> io::Result<usize> {
+        self.recv_into(&mut buf)
+    }
+}
+
+impl io::Write for Socket {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let s = buf.len();
+        let _ = self.send(buf, 0)?;
+        Ok(s)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 impl mio::Evented for Socket {
