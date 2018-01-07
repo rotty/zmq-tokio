@@ -39,14 +39,14 @@ fn stream_server(
     rep: Socket,
     count: u64,
 ) -> Box<futures::Future<Item = (), Error = io::Error> + std::marker::Send + 'static> {
-    error!("server started");
+    trace!("server started");
     let (responses, requests) = rep.framed().split();
     Box::new(
         requests
             .take(count)
             .fold(responses, |responses, request| {
                 // FIXME: multipart send support missing, this is a crude hack
-                error!("responding: {:?}", request.as_str());
+                trace!("responding: {:?}", request.as_str());
                 responses.send(request)
             })
             .map(|_| {}),
@@ -60,12 +60,16 @@ fn stream_client(
     Box::new(
         stream::iter_result((0..count).map(Ok))
             .fold(req.framed().split(), move |(requests, responses), i| {
-                let msg = zmq::Message::from_slice(format!("Hello {}", i).as_bytes());
-                error!("requesting {:?}", msg.as_str());
+                let msg_str = format!("Hello {}", i);
+                let msg = zmq::Message::from_slice(msg_str.as_bytes());
+                trace!("requesting {:?}", msg.as_str());
                 requests.send(msg).and_then(move |requests| {
-                    error!("request sent!");
+                    trace!("request sent!");
                     let show_reply = responses.into_future().and_then(move |(reply, rest)| {
-                        error!("reply: {:?}", reply.unwrap().as_str());
+                        let msg = reply.unwrap();
+                        let m_str = msg.as_str().unwrap();
+                        // test that we get our message echoed back to us.
+                        assert_eq!(m_str.to_string(), msg_str);
                         Ok(rest)
                     });
                     show_reply
@@ -96,7 +100,7 @@ fn test_stream() {
         t!(req.connect(SOCKET_ADDRESS));
 
         let client = stream_client(req, 1000);
-        l.run(client).unwrap();
+        let _ = l.run(client).unwrap();
     });
 
     let server = stream_server(rep, 1000);
