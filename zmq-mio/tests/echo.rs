@@ -236,8 +236,7 @@ fn echo_server() {
     while echo.client.active {
         t!(poll.poll(&mut events, None));
 
-        for i in 0..events.len() {
-            let event = events.get(i).unwrap();
+        for event in &events {
             echo.ready(&poll, event.token(), event.readiness());
         }
     }
