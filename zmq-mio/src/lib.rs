@@ -297,10 +297,10 @@ mod tests {
 
     // Returns a `Socket` pair ready to talk to each other.
     fn get_async_test_pair() -> (Socket, Socket) {
-        let ctx = zmq::Context::new();
-        let bound = Socket::new(ctx.socket(zmq::PAIR).unwrap());
+        let ctx = Context::new();
+        let bound = ctx.socket(zmq::PAIR).unwrap();
         let _ = bound.bind(TEST_ADDR).unwrap();
-        let connected = Socket::new(ctx.socket(zmq::PAIR).unwrap());
+        let connected = ctx.socket(zmq::PAIR).unwrap();
         let _ = connected.connect(TEST_ADDR).unwrap();
         (bound, connected)
     }

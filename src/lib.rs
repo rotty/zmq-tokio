@@ -236,10 +236,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::io::{Read, Write};
     use zmq;
 
-    use futures::{future, sink, stream};
+    use futures::stream;
     use futures::{Future, Sink, Stream};
     use futures_cpupool::CpuPool;
     use tokio_core::reactor::Core;
@@ -269,23 +268,33 @@ mod tests {
         let s = pool.spawn_fn(move || {
             let (_, recvr_rx) = recvr.framed().split();
             let (sendr_tx, _) = sendr.framed().split();
+
             let msg = zmq::Message::from_slice(b"hello there");
-            let send_stream = stream::iter_ok::<_, ()>(vec![(sendr_tx, recvr_rx, msg)])
+
+            let test_stream = stream::iter_ok::<_, ()>(vec![(sendr_tx, recvr_rx, msg)])
                 .and_then(|(tx, rx, msg)| {
-                    trace!("sending");
-                    let start = tx.send(msg);
-                    Ok((start, rx))
+                    // send a message to the receiver.
+                    // return a future with the receiver
+                    let _ = tx.send(msg);
+                    Ok(rx)
                 })
-                .and_then(|(_, rx)| {
-                    let r = rx.into_future().and_then(|rep| {
-                        trace!("recvd");
+                .for_each(|rx| {
+                    // process the first response that the
+                    // receiver gets.
+                    // Assert that it equals the message sent
+                    // by the sender.
+                    // returns `Ok(())` when the stream ends.
+                    let _ = rx.into_future().and_then(|(response, _)| {
+                        let msg = match response {
+                            Some(m) => m,
+                            None => panic!("expected a response"),
+                        };
+                        assert_eq!(msg.as_str(), Some("hello there"));
                         Ok(())
                     });
-                    Ok(r)
-                })
-                .and_then(|_| Ok(()))
-                .for_each(|_| Ok(()));
-            let r = send_stream.wait().unwrap();
+                    Ok(())
+                });
+            let _ = test_stream.wait().unwrap();
             let ok: std::result::Result<(), ()> = Ok(());
             ok
         });
