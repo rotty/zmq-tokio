@@ -45,14 +45,24 @@
 //!     // We setup a loop which will poll our sockets at every turn,
 //!     // handling the events just the way we want them to be handled.
 //!     let mut events = Events::with_capacity(1024);
-//!     let mut msg_sent = false;
-//!     let mut msg_got = false;
 //!
-//!     loop {
+//!     // We also setup some variables to control the main loop flow.
+//!     let mut msg_sent = false;
+//!     let mut msg_received = false;
+//!
+//!     // will loop until the listener gets a message.
+//!     while !msg_received {
+//!         // Poll for our registered events.
 //!         poll.poll(&mut events, None).unwrap();
+//!
+//!         // Handle each event accordingly...
 //!         for event in &events {
 //!             match event.token() {
 //!                 SENDER => {
+//!                     // if the sender is writable and the message hasn't
+//!                     // been sent, then we try to send it. If sending
+//!                     // is not possible because the socket would block,
+//!                     // then we just continue with handling polled events.
 //!                     if event.readiness().is_writable() && !msg_sent {
 //!                         if let Err(e) = sender.send("hello", 0) {
 //!                            if e.kind() == io::ErrorKind::WouldBlock {
@@ -64,6 +74,9 @@
 //!                     }
 //!                 }
 //!                 LISTENER => {
+//!                     // if the listener is readable, then we try to receive
+//!                     // it. If reading is not possible because of blocking, then
+//!                     // we continue handling events.
 //!                     let msg = match listener.recv(0) {
 //!                         Ok(m) => m,
 //!                         Err(e) => {
@@ -73,12 +86,11 @@
 //!                             panic!("trouble receiving");
 //!                         }
 //!                     };
-//!                     msg_got = true;
+//!                     msg_received = true;
 //!                 }
 //!                 _ => unreachable!(),
 //!             }
 //!         }
-//!         if msg_got { break }
 //!     }
 //! }
 //! ```
