@@ -8,9 +8,12 @@ repository = "https://github.com/rotty/zmq-tokio"
 readme = "README.md"
 
 [dependencies]
+bytes = "0.4.5"
 mio = "0.6"
 tokio-core = "0.1"
-futures = "0.1.14"
+tokio-io = "0.1"
+futures = "0.1"
+futures-cpupool = "0.1"
 zmq = { git = "https://github.com/erickt/rust-zmq" }
 log = "0.3"
 env_logger = "0.3"
