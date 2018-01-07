@@ -1,3 +1,87 @@
+//! Asynchronous `ØMQ`, a.k.a.`(ZeroMQ)` in `Rust` with `mio`.
+//!
+//! Run ØMQ sockets that implement `mio::Evented`, as well as non-blocking
+//! implementations of `io::Write` and `io::Read`.
+//!
+//! # Example
+//! ```
+//! extern crate mio;
+//! extern crate zmq;
+//! extern crate zmq_mio;
+//!
+//! use std::io;
+//! use mio::{Events, Poll, PollOpt, Ready, Token};
+//! use zmq_mio::{Context, Socket};
+//!
+//! // We use ØMQ's `inproc://` scheme for intelligent and ready-to-use
+//! // inter-process communications (IPC).
+//! const EXAMPLE_ADDR: &str = "inproc://example_addr";
+//! const LISTENER: Token = Token(0);
+//! const SENDER: Token = Token(1);
+//!
+//! // An example of a typical ZMQ-flow, using asynchronous mode.
+//! fn main() {
+//!     // Create the context.
+//!     let context = Context::new();
+//!     // Use the context to generate sockets.
+//!     let listener = context.socket(zmq::PAIR).unwrap();
+//!     let sender = context.socket(zmq::PAIR).unwrap();
+//!
+//!     // Bind and connect our sockets.
+//!     let _ = listener.bind(EXAMPLE_ADDR).unwrap();
+//!     let _ = sender.connect(EXAMPLE_ADDR).unwrap();
+//!
+//!     // Now, for the asynchronous stuff...
+//!     // First, we setup a `mio::Poll` instance.
+//!     let poll = Poll::new().unwrap();
+//!
+//!     // Then we register our sockets for polling the events that
+//!     // interest us.
+//!     poll.register(&listener, LISTENER, Ready::readable(),
+//!                 PollOpt::edge()).unwrap();
+//!     poll.register(&sender, SENDER, Ready::writable(),
+//!                 PollOpt::edge()).unwrap();
+//!
+//!     // We setup a loop which will poll our sockets at every turn,
+//!     // handling the events just the way we want them to be handled.
+//!     let mut events = Events::with_capacity(1024);
+//!     let mut msg_sent = false;
+//!     let mut msg_got = false;
+//!
+//!     loop {
+//!         poll.poll(&mut events, None).unwrap();
+//!         for event in &events {
+//!             match event.token() {
+//!                 SENDER => {
+//!                     if event.readiness().is_writable() && !msg_sent {
+//!                         if let Err(e) = sender.send("hello", 0) {
+//!                            if e.kind() == io::ErrorKind::WouldBlock {
+//!                                continue;
+//!                            }
+//!                            panic!("trouble receiving");
+//!                         }
+//!                         msg_sent = true;
+//!                     }
+//!                 }
+//!                 LISTENER => {
+//!                     let msg = match listener.recv(0) {
+//!                         Ok(m) => m,
+//!                         Err(e) => {
+//!                             if e.kind() == io::ErrorKind::WouldBlock {
+//!                                 continue;
+//!                             }
+//!                             panic!("trouble receiving");
+//!                         }
+//!                     };
+//!                     msg_got = true;
+//!                 }
+//!                 _ => unreachable!(),
+//!             }
+//!         }
+//!         if msg_got { break }
+//!     }
+//! }
+//! ```
 extern crate mio;
 #[macro_use] extern crate log;
 extern crate zmq;
@@ -11,29 +95,46 @@ use std::os::unix::io::RawFd;
 use mio::unix::EventedFd;
 use mio::{PollOpt, Ready, Token};
 
-#[derive(Clone)]
+/// Wrapper for ØMQ context.
+#[derive(Clone, Default)]
 pub struct Context {
+    // Wrapper for `zmq::Context`
     inner: zmq::Context,
 }
 
+impl fmt::Debug for Context {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "<zmq_mio::Context>")
+    }
+}
+
 impl Context {
+    /// Create a new `Context` instance. Use the `Context::socket` method
+    /// to create sockets that can talk via `inproc://*` addresses.
     pub fn new() -> Self {
         Context { inner: zmq::Context::new() }
     }
 
+    /// Create a new `Socket` instance for asynchronous communications.
     pub fn socket(&self, typ: zmq::SocketType) -> io::Result<Socket> {
         Ok(Socket::new(try!(self.inner.socket(typ))))
     }
 }
 
 // mio integration, should probably be put into its own crate eventually
-/// Evented ZMQ socket wrapper for asynchronous communications.
+/// Asynchronous ØMQ socket.
 pub struct Socket {
     inner: zmq::Socket,
 }
 
+impl fmt::Debug for Socket {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Socket<{:?}>", self.inner.get_socket_type())
+    }
+}
+
 impl Socket {
-    /// Create a new event-wrapped ZMQ socket. Takes an existing `zmq::Socket`
+    /// Create a new event-wrapped ØMQ socket. Takes an existing `zmq::Socket`
     /// instance as an only argument.
     pub fn new(socket: zmq::Socket) -> Self {
         Socket { inner: socket }
@@ -67,7 +168,7 @@ impl Socket {
          self.inner.set_subscribe(prefix).map_err(|e| e.into())
     }
 
-    /// Poll ZMQ Socket events and return `mio::Ready`.
+    /// Poll ØMQ Socket events and return `mio::Ready`.
     pub fn poll_events(&self) -> io::Result<Ready> {
         let events = try!(self.inner.get_events());
         let ready = |mask: zmq::PollEvents, value| {
@@ -109,23 +210,28 @@ impl Socket {
 
 unsafe impl Send for Socket {}
 
+/// This implementation is meant for asynchronous `Read`. It might fail
+/// if not handled via polling.
 impl Read for Socket {
+    /// Asynchronously read a byte buffer from the `Socket`.
     fn read(&mut self, mut buf: &mut [u8]) -> io::Result<usize> {
-        //let rc = self.recv_into(buf)?;
         let msg = self.get_ref().recv_msg(0)?;
-        let rc = msg.len();
-        println!("read {} {:?}", rc, msg.as_str());
         Write::write(&mut buf, msg.deref())
     }
 }
 
+/// This implementation is meant for asynchronous `Write`. It might fail
+/// if not handled via polling.
 impl Write for Socket {
+    /// Asynchronously write a byte buffer to the `Socket`.
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let sent = buf.len();
         let _ = self.send(buf, 0)?;
         Ok(sent)
     }
 
+    /// Flush is not implemented since ØMQ guarantees that a message is
+    /// either fully sent, or not sent at all.
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
@@ -155,13 +261,14 @@ impl mio::Evented for Socket {
 mod tests {
     use std::io::{Read, Write};
     use zmq;
-
     use super::*;
 
+    const TEST_STR: &[u8] = b"test-test-one-2-3";
     const TEST_ADDR: &str = "inproc://test";
     const TEST_BUFFER_SIZE: usize = 64;
 
-    fn test_pair() -> (Socket, Socket) {
+    // Returns a `Socket` pair ready to talk to each other.
+    fn get_async_test_pair() -> (Socket, Socket) {
         let ctx = zmq::Context::new();
         let bound = Socket::new(ctx.socket(zmq::PAIR).unwrap());
         let _ = bound.bind(TEST_ADDR).unwrap();
@@ -171,15 +278,14 @@ mod tests {
     }
 
     #[test]
-    fn socket_receives_byte_buffer() {
-        let (mut b, mut c) = test_pair();
-        let sent = c.write(b"holla").unwrap();
-        assert_eq!(sent, b"holla".len());
+    fn socket_sends_and_receives_a_byte_buffer() {
+        let (mut receiver, mut sender) = get_async_test_pair();
+
+        let sent = sender.write(TEST_STR).unwrap();
+        assert_eq!(sent, TEST_STR.len());
 
         let mut buf = vec![0; TEST_BUFFER_SIZE];
-
-        let recvd = b.read(&mut buf).unwrap();
-        assert_eq!(recvd, b"holla".len());
-        assert_eq!(&buf[..recvd], b"holla");
+        let recvd = receiver.read(&mut buf).unwrap();
+        assert_eq!(&buf[..recvd], TEST_STR);
     }
 }
