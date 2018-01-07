@@ -35,41 +35,46 @@ macro_rules! t {
 
 const SOCKET_ADDRESS: &'static str = "tcp://127.0.0.1:3294";
 
-fn stream_server(rep: Socket, count: u64) -> Box<futures::Future<Item = (), Error = io::Error> + std::marker::Send + 'static> {
-    trace!("server started");
+fn stream_server(
+    rep: Socket,
+    count: u64,
+) -> Box<futures::Future<Item = (), Error = io::Error> + std::marker::Send + 'static> {
+    error!("server started");
     let (responses, requests) = rep.framed().split();
-    Box::new(requests
-        .take(count)
-        .fold(responses, |responses, mut request| {
-            // FIXME: multipart send support missing, this is a crude hack
-            let mut part0 = None;
-            for part in request.drain(0..1) {
-                part0 = Some(part);
-                break;
-            }
-            trace!("request: {:?}", part0);
-            responses.send(part0.unwrap())
-        })
-        .map(|_| {}))
+    Box::new(
+        requests
+            .take(count)
+            .fold(responses, |responses, request| {
+                // FIXME: multipart send support missing, this is a crude hack
+                error!("responding: {:?}", request.as_str());
+                responses.send(request)
+            })
+            .map(|_| {}),
+    )
 }
 
-fn stream_client(req: Socket, count: u64) -> Box<futures::Future<Item = (), Error = io::Error> + std::marker::Send + 'static> {
-    Box::new(stream::iter_result((0..count).map(Ok))
-        .fold(req.framed().split(), move |(requests, responses), i| {
-            requests
-                .send(format!("Hello {}", i).into())
-                .and_then(move |requests| {
-                    trace!("request sent!");
+fn stream_client(
+    req: Socket,
+    count: u64,
+) -> Box<futures::Future<Item = (), Error = io::Error> + std::marker::Send + 'static> {
+    Box::new(
+        stream::iter_result((0..count).map(Ok))
+            .fold(req.framed().split(), move |(requests, responses), i| {
+                let msg = zmq::Message::from_slice(format!("Hello {}", i).as_bytes());
+                error!("requesting {:?}", msg.as_str());
+                requests.send(msg).and_then(move |requests| {
+                    error!("request sent!");
                     let show_reply = responses.into_future().and_then(move |(reply, rest)| {
-                        trace!("reply: {:?}", reply);
+                        error!("reply: {:?}", reply.unwrap().as_str());
                         Ok(rest)
                     });
                     show_reply
                         .map(|responses| (requests, responses))
                         .map_err(|(e, _)| e)
                 })
-        })
-        .map(|_| {}))
+            })
+            .map(|_| {}),
+    )
 }
 
 #[test]
@@ -95,6 +100,6 @@ fn test_stream() {
     });
 
     let server = stream_server(rep, 1000);
-    l.run(server).unwrap();
-    client.join().unwrap();
+    let _ = l.run(server).unwrap();
+    let _ = client.join().unwrap();
 }

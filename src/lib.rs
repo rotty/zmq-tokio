@@ -196,3 +196,61 @@ impl Stream for SocketFramed {
         return Ok(Async::Ready(Some(self.rd.split_off(0))));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::io::{Read, Write};
+    use zmq;
+
+    use futures::{future, sink, stream};
+    use futures::{Future, Sink, Stream};
+    use futures_cpupool::CpuPool;
+    use tokio_core::reactor::Core;
+    use super::*;
+
+    const TEST_ADDR: &str = "inproc://test";
+    const TEST_BUFFER_SIZE: usize = 64;
+
+    fn test_pair() -> (Socket, Socket, Core) {
+        let core = Core::new().unwrap();
+        let handle = core.handle();
+        let ctx = Context::new();
+
+        let recvr = ctx.socket(zmq::PAIR, &handle).unwrap();
+        let _ = recvr.bind(TEST_ADDR).unwrap();
+
+        let sendr = ctx.socket(zmq::PAIR, &handle).unwrap();
+        let _ = sendr.connect(TEST_ADDR).unwrap();
+
+        (recvr, sendr, core)
+    }
+
+    #[test]
+    fn socket_receives_byte_buffer() {
+        let pool = CpuPool::new_num_cpus();
+        let (recvr, sendr, mut _core) = test_pair();
+
+        let s = pool.spawn_fn(move || {
+            let (_, recvr_rx) = recvr.framed().split();
+            let (sendr_tx, _) = sendr.framed().split();
+            let msg = zmq::Message::from_slice(b"hello there");
+            let mut send_stream = stream::iter_ok::<_, ()>(vec![(sendr_tx, recvr_rx, msg)])
+                .and_then(|(tx, rx, msg)| {
+                    let start = tx.send(msg);
+                    Ok((start, rx))
+                })
+                .and_then(|(_, rx)| {
+                    let r = rx.into_future().and_then(|rep| {
+                        Ok(())
+                    });
+                    Ok(r)
+                })
+                .and_then(|_| Ok(()))
+                .for_each(|_| Ok(()));
+            let r = send_stream.wait().unwrap();
+            let ok: std::result::Result<(), ()> = Ok(());
+            ok
+        });
+        let _ = s.wait().unwrap();
+    }
+}
