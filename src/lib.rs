@@ -5,12 +5,9 @@
 extern crate bytes;
 extern crate futures;
 extern crate futures_cpupool;
-extern crate mio;
-
 #[macro_use]
 extern crate log;
-
-#[macro_use]
+extern crate mio;
 extern crate tokio_core;
 extern crate tokio_io;
 extern crate zmq;
@@ -40,7 +37,7 @@ fn is_wouldblock<T>(r: &io::Result<T>) -> bool {
 
 /// Wrapper for `zmq::Context`.
 // TODO: maybe we don't need this
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Context {
     ctx: zmq::Context,
 }
