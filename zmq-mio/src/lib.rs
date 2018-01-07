@@ -1,9 +1,11 @@
 extern crate mio;
+#[macro_use] extern crate log;
 extern crate zmq;
 
 use std::io;
-#[macro_use] extern crate log;
-
+use std::io::{Read, Write};
+use std::fmt;
+use std::ops::Deref;
 use std::os::unix::io::RawFd;
 
 use mio::unix::EventedFd;
@@ -83,8 +85,10 @@ impl Socket {
     pub fn send<T>(&self, item: T, flags: i32) -> io::Result<()>
         where T: zmq::Sendable
     {
-        let r = self.inner.send(item, zmq::DONTWAIT | flags).map_err(|e| e.into());
-        r
+        match self.inner.send(item, zmq::DONTWAIT | flags) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e.into()),
+        }
     }
 
     /// Read a single `zmq::Message` from the socket.
@@ -97,25 +101,29 @@ impl Socket {
         r
     }
 
-    pub fn recv_into(&self, mut buf: &mut [u8]) -> io::Result<usize> {
-        let r = self.inner.recv_into(&mut buf, zmq::DONTWAIT).map_err(|e| e.into());
+    pub fn recv_into(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let r = self.inner.recv_into(buf, zmq::DONTWAIT).map_err(|e| e.into());
         r
     }
 }
 
 unsafe impl Send for Socket {}
 
-impl io::Read for Socket {
+impl Read for Socket {
     fn read(&mut self, mut buf: &mut [u8]) -> io::Result<usize> {
-        self.recv_into(&mut buf)
+        //let rc = self.recv_into(buf)?;
+        let msg = self.get_ref().recv_msg(0)?;
+        let rc = msg.len();
+        println!("read {} {:?}", rc, msg.as_str());
+        Write::write(&mut buf, msg.deref())
     }
 }
 
-impl io::Write for Socket {
+impl Write for Socket {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let s = buf.len();
+        let sent = buf.len();
         let _ = self.send(buf, 0)?;
-        Ok(s)
+        Ok(sent)
     }
 
     fn flush(&mut self) -> io::Result<()> {
