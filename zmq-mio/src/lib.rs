@@ -142,3 +142,36 @@ impl mio::Evented for Socket {
         EventedFd(&fd).deregister(poll)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::io::{Read, Write};
+    use zmq;
+
+    use super::*;
+
+    const TEST_ADDR: &str = "inproc://test";
+    const TEST_BUFFER_SIZE: usize = 64;
+
+    fn test_pair() -> (Socket, Socket) {
+        let ctx = zmq::Context::new();
+        let bound = Socket::new(ctx.socket(zmq::PAIR).unwrap());
+        let _ = bound.bind(TEST_ADDR).unwrap();
+        let connected = Socket::new(ctx.socket(zmq::PAIR).unwrap());
+        let _ = connected.connect(TEST_ADDR).unwrap();
+        (bound, connected)
+    }
+
+    #[test]
+    fn socket_receives_byte_buffer() {
+        let (mut b, mut c) = test_pair();
+        let sent = c.write(b"holla").unwrap();
+        assert_eq!(sent, b"holla".len());
+
+        let mut buf = vec![0; TEST_BUFFER_SIZE];
+
+        let recvd = b.read(&mut buf).unwrap();
+        assert_eq!(recvd, b"holla".len());
+        assert_eq!(&buf[..recvd], b"holla");
+    }
+}

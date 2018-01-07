@@ -218,14 +218,14 @@ fn echo_server() {
     let poll = t!(Poll::new());
     let mut events = Events::with_capacity(1024);
 
-    let mut srv = t!(ctx.socket(zmq::REP));
+    let srv = t!(ctx.socket(zmq::REP));
     t!(srv.bind(&addr));
     t!(poll.register(&srv,
                      SERVER,
                      Ready::readable(),
                      PollOpt::edge() | PollOpt::oneshot()));
 
-    let mut sock = t!(ctx.socket(zmq::REQ));
+    let sock = t!(ctx.socket(zmq::REQ));
     t!(sock.connect(&addr));
     t!(poll.register(&sock,
                      CLIENT,
