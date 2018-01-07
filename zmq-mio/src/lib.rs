@@ -68,7 +68,7 @@
 //!                            if e.kind() == io::ErrorKind::WouldBlock {
 //!                                continue;
 //!                            }
-//!                            panic!("trouble receiving");
+//!                            panic!("trouble sending message");
 //!                         }
 //!                         msg_sent = true;
 //!                     }
@@ -83,7 +83,7 @@
 //!                             if e.kind() == io::ErrorKind::WouldBlock {
 //!                                 continue;
 //!                             }
-//!                             panic!("trouble receiving");
+//!                             panic!("trouble receiving message");
 //!                         }
 //!                     };
 //!                     msg_received = true;
@@ -222,13 +222,6 @@ impl Socket {
             .map_err(|e| e.into());
         r
     }
-
-    pub fn recv_into(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let r = self.inner
-            .recv_into(buf, zmq::DONTWAIT)
-            .map_err(|e| e.into());
-        r
-    }
 }
 
 unsafe impl Send for Socket {}
@@ -238,7 +231,7 @@ unsafe impl Send for Socket {}
 impl Read for Socket {
     /// Asynchronously read a byte buffer from the `Socket`.
     fn read(&mut self, mut buf: &mut [u8]) -> io::Result<usize> {
-        let msg = self.get_ref().recv_msg(0)?;
+        let msg = self.recv(0)?;
         Write::write(&mut buf, msg.deref())
     }
 }
