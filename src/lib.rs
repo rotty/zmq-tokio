@@ -47,7 +47,8 @@ impl Context {
 
     pub fn socket(&self, typ: zmq::SocketType, handle: &Handle) -> io::Result<Socket> {
         let socket = try!(self.ctx.socket(typ));
-        Socket::new(socket, handle)
+        let new_sock: Socket = Socket::new(socket, handle)?;
+        Ok(new_sock)
     }
 }
 
@@ -60,9 +61,10 @@ pub struct Socket {
 impl Socket {
     /// Create a new poll-evented ØMQ socket, along with a tokio reactor handle
     /// to drive its event-loop.
-    pub fn new(socket: zmq::Socket, handle: &Handle) -> io::Result<Socket> {
+    pub fn new(socket: zmq::Socket, handle: &Handle) -> io::Result<Self> {
         let io = try!(PollEvented::new(zmq_mio::Socket::new(socket), handle));
-        Ok(Socket { io: io })
+        let socket = Socket { io };
+        Ok(socket)
     }
 
     /// Bind the underlying socket to the given address.
@@ -93,7 +95,8 @@ impl Socket {
         trace!("attempting send");
         let r = self.io.get_ref().send(item, flags);
         if is_wouldblock(&r) {
-            self.io.need_read();
+            self.io.need_write();
+            return Err(mio::would_block());
         }
         trace!("send - {:?}", r);
         r
@@ -102,7 +105,7 @@ impl Socket {
     /// Non-blocking recv a `zmq::Message`.
     pub fn recv(&self, flags: i32) -> io::Result<zmq::Message> {
         trace!("entering recv");
-        if !try!(self.io.get_ref().poll_events()).is_readable() {
+        if !try!(self.poll_events()).is_readable() {
             trace!("recv - not ready");
             return Err(mio::would_block());
         }
@@ -115,6 +118,7 @@ impl Socket {
         r
     }
 
+    /// Call to `poll_events` on the inner socket.
     fn poll_events(&self) -> io::Result<Ready> {
         self.io.get_ref().poll_events()
     }
