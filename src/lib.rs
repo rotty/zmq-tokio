@@ -111,7 +111,7 @@ impl Socket {
     }
 
     /// Non-blocking recv a `zmq::Message`.
-    pub fn recv(&mut self, flags: i32) -> io::Result<zmq::Message> {
+    pub fn recv(&mut self, _flags: i32) -> io::Result<zmq::Message> {
         trace!("entering recv");
         if !try!(self.poll_events()).is_readable() {
             trace!("recv - not ready");
@@ -216,7 +216,7 @@ where
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        let mut buf = vec![0; 256];
+        let mut buf = vec![0; 1024];
         trace!("SocketFramed::poll()");
         match self.socket.read(&mut buf) {
             Err(e) => {
@@ -246,7 +246,6 @@ mod tests {
     use super::*;
 
     const TEST_ADDR: &str = "inproc://test";
-    const TEST_BUFFER_SIZE: usize = 64;
 
     fn test_pair() -> (Socket, Socket, Core) {
         let core = Core::new().unwrap();
@@ -271,7 +270,7 @@ mod tests {
             let (_, recvr_rx) = recvr.framed().split();
             let (sendr_tx, _) = sendr.framed().split();
             let msg = zmq::Message::from_slice(b"hello there");
-            let mut send_stream = stream::iter_ok::<_, ()>(vec![(sendr_tx, recvr_rx, msg)])
+            let send_stream = stream::iter_ok::<_, ()>(vec![(sendr_tx, recvr_rx, msg)])
                 .and_then(|(tx, rx, msg)| {
                     trace!("sending");
                     let start = tx.send(msg);
