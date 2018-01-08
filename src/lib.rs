@@ -3,8 +3,53 @@
 //!
 //! Run ØMQ sockets using `tokio` reactors, futures, etc.
 //!
-//! # Example
+//! # Examples
 //!
+//! ## Sending and receiving simple messages with `Future`
+//! ```
+//! extern crate futures;
+//! extern crate tokio_core;
+//! extern crate zmq_tokio;
+//! extern crate zmq;
+//!
+//! use futures::stream;
+//! use futures::{Future, Sink, Stream};
+//! use tokio_core::reactor::Core;
+//!
+//! use zmq_tokio::{Context, Socket, PAIR};
+//!
+//! const TEST_ADDR: &str = "inproc://test";
+//!
+//! fn test_pair() -> (Socket, Socket, Core) {
+//!     let reactor = Core::new().unwrap();
+//!     let handle = reactor.handle();
+//!     let ctx = Context::new();
+//!
+//!     let recvr = ctx.socket(PAIR, &handle).unwrap();
+//!     let _ = recvr.bind(TEST_ADDR).unwrap();
+//!
+//!     let sendr = ctx.socket(PAIR, &handle).unwrap();
+//!     let _ = sendr.connect(TEST_ADDR).unwrap();
+//!
+//!     (recvr, sendr, reactor)
+//! }
+//!
+//! fn main() {
+//!     let (mut recvr, mut sendr, mut reactor) = test_pair();
+//!     let msg = zmq::Message::from_slice(b"this message will be sent");
+//!
+//!     let send_future = sendr.send(msg).and_then(|_| {
+//!         recvr.recv()
+//!     }).and_then(|msg| {
+//!         assert_eq!(msg.as_str(), Some("this message will be sent"));
+//!         Ok(())
+//!     });
+//!
+//!     let _ = reactor.run(send_future).unwrap();
+//! }
+//! ```
+//!
+//! ## Manual handling using `Transport`
 //! ```
 //! extern crate futures;
 //! extern crate tokio_core;
@@ -87,9 +132,12 @@ extern crate tokio_io;
 extern crate zmq;
 extern crate zmq_mio;
 
+#[path = "futures.rs"]
+pub mod zmq_futures;
+
 use std::io;
 use std::io::{Read, Write};
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 
 use bytes::BytesMut;
 use futures::{Async, AsyncSink, Poll, StartSend};
@@ -177,7 +225,7 @@ impl Socket {
     }
 
     /// Non-blocking send a `zmq::Message`.
-    pub fn send(&mut self, item: &[u8], _flags: i32) -> io::Result<usize> {
+    pub fn _send(&mut self, item: &[u8], _flags: i32) -> io::Result<usize> {
         trace!("entering send");
         if !try!(self.poll_events()).is_writable() {
             trace!("send - not ready");
@@ -193,8 +241,18 @@ impl Socket {
         r
     }
 
+    /// Sends a message as a `Future`.
+    pub fn send<T: Into<zmq::Message>>(&mut self, message: T) -> self::zmq_futures::SendMessage {
+        self::zmq_futures::SendMessage::new(self, message.into())
+    }
+
+    /// Returns a `Future` that resolves into a `zmq::Message`
+    pub fn recv(&mut self) -> self::zmq_futures::ReceiveMessage {
+        self::zmq_futures::ReceiveMessage::new(self)
+    }
+
     /// Non-blocking recv a `zmq::Message`.
-    pub fn recv(&mut self, _flags: i32) -> io::Result<zmq::Message> {
+    pub fn _recv(&mut self, _flags: i32) -> io::Result<zmq::Message> {
         trace!("entering recv");
         if !try!(self.poll_events()).is_readable() {
             trace!("recv - not ready");
@@ -299,9 +357,9 @@ where
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        let mut buf = vec![0; 1024];
+        let mut buf = zmq::Message::with_capacity(1024);
         trace!("SocketFramed::poll()");
-        match self.socket.read(&mut buf) {
+        match self.socket.read(buf.deref_mut()) {
             Err(e) => {
                 if e.kind() == io::ErrorKind::WouldBlock {
                     Ok(Async::NotReady)
@@ -310,8 +368,8 @@ where
                 }
             }
             Ok(c) => {
-                let msg = zmq::Message::from_slice(&buf[..c]);
-                Ok(Async::Ready(Some(msg)))
+                buf = zmq::Message::from_slice(&buf[..c]);
+                Ok(Async::Ready(Some(buf)))
             }
         }
     }
