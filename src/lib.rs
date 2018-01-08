@@ -2,6 +2,71 @@
 //! ======================
 //!
 //! Run ØMQ sockets using `tokio` reactors, futures, etc.
+//!
+//! # Example
+//!
+//! ```
+//! extern crate futures;
+//! extern crate tokio_core;
+//! extern crate zmq_tokio;
+//! extern crate zmq;
+//!
+//! use futures::stream;
+//! use futures::{Future, Sink, Stream};
+//! use tokio_core::reactor::Core;
+//!
+//! use zmq_tokio::{Context, Socket, PAIR};
+//!
+//! const TEST_ADDR: &str = "inproc://test";
+//!
+//! fn test_pair() -> (Socket, Socket, Core) {
+//!     let reactor = Core::new().unwrap();
+//!     let handle = reactor.handle();
+//!     let ctx = Context::new();
+//!
+//!     let recvr = ctx.socket(PAIR, &handle).unwrap();
+//!     let _ = recvr.bind(TEST_ADDR).unwrap();
+//!
+//!     let sendr = ctx.socket(PAIR, &handle).unwrap();
+//!     let _ = sendr.connect(TEST_ADDR).unwrap();
+//!
+//!     (recvr, sendr, reactor)
+//! }
+//!
+//! fn main() {
+//!     let (recvr, sendr, mut reactor) = test_pair();
+//!
+//!     let (_, rx) = recvr.framed().split();
+//!     let (tx, _) = sendr.framed().split();
+//!
+//!     let msg = zmq::Message::from_slice(b"hello there");
+//!
+//!     let start_stream = stream::iter_ok::<_, ()>(vec![(tx, rx, msg)]);
+//!     let send_msg = start_stream.and_then(|(tx, rx, msg)| {
+//!             // send a message to the receiver.
+//!             // return a future with the receiver
+//!             let _ = tx.send(msg);
+//!             Ok(rx)
+//!         });
+//!     let fetch_response = send_msg.for_each(|rx| {
+//!             // process the first response that the
+//!             // receiver gets.
+//!             // Assert that it equals the message sent
+//!             // by the sender.
+//!             // returns `Ok(())` when the stream ends.
+//!             let _ = rx.into_future().and_then(|(response, _)| {
+//!                 match response {
+//!                     Some(msg) => assert_eq!(msg.as_str(), Some("hello there")),
+//!                     None => panic!("expected a response"),
+//!                 }
+//!                 Ok(())
+//!             });
+//!             Ok(())
+//!         });
+//!
+//!     let _ = reactor.run(fetch_response).unwrap();
+//! }
+//! ```
 extern crate bytes;
 extern crate futures;
 extern crate futures_cpupool;
@@ -233,68 +298,5 @@ where
 
 #[cfg(test)]
 mod tests {
-    use zmq;
-
-    use futures::stream;
-    use futures::{Future, Sink, Stream};
-    use futures_cpupool::CpuPool;
-    use tokio_core::reactor::Core;
-    use super::*;
-
-    const TEST_ADDR: &str = "inproc://test";
-
-    fn test_pair() -> (Socket, Socket, Core) {
-        let core = Core::new().unwrap();
-        let handle = core.handle();
-        let ctx = Context::new();
-
-        let recvr = ctx.socket(zmq::PAIR, &handle).unwrap();
-        let _ = recvr.bind(TEST_ADDR).unwrap();
-
-        let sendr = ctx.socket(zmq::PAIR, &handle).unwrap();
-        let _ = sendr.connect(TEST_ADDR).unwrap();
-
-        (recvr, sendr, core)
-    }
-
-    #[test]
-    fn socket_receives_byte_buffer() {
-        let pool = CpuPool::new_num_cpus();
-        let (recvr, sendr, mut _core) = test_pair();
-
-        let s = pool.spawn_fn(move || {
-            let (_, recvr_rx) = recvr.framed().split();
-            let (sendr_tx, _) = sendr.framed().split();
-
-            let msg = zmq::Message::from_slice(b"hello there");
-
-            let test_stream = stream::iter_ok::<_, ()>(vec![(sendr_tx, recvr_rx, msg)])
-                .and_then(|(tx, rx, msg)| {
-                    // send a message to the receiver.
-                    // return a future with the receiver
-                    let _ = tx.send(msg);
-                    Ok(rx)
-                })
-                .for_each(|rx| {
-                    // process the first response that the
-                    // receiver gets.
-                    // Assert that it equals the message sent
-                    // by the sender.
-                    // returns `Ok(())` when the stream ends.
-                    let _ = rx.into_future().and_then(|(response, _)| {
-                        let msg = match response {
-                            Some(m) => m,
-                            None => panic!("expected a response"),
-                        };
-                        assert_eq!(msg.as_str(), Some("hello there"));
-                        Ok(())
-                    });
-                    Ok(())
-                });
-            let _ = test_stream.wait().unwrap();
-            let ok: std::result::Result<(), ()> = Ok(());
-            ok
-        });
-        let _ = s.wait().unwrap();
-    }
+    // No unit tests yet. Checkout the integration and doctests.
 }
