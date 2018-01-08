@@ -91,6 +91,9 @@ use tokio_core::reactor::{Handle, PollEvented};
 use tokio_io::{AsyncRead, AsyncWrite};
 use mio::Ready;
 
+/// The possible socket types.
+pub use zmq::SocketType::{PAIR, PUB, SUB, REQ, REP, DEALER, ROUTER, PULL, PUSH, XPUB, XSUB, STREAM};
+
 // Convenience function to determine if an I/O operation would block
 // if the error kind is `io::ErrorKind::WouldBlock`. Returns a `boolean`.
 fn is_wouldblock<T>(r: &io::Result<T>) -> bool {
