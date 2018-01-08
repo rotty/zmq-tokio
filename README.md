@@ -15,7 +15,55 @@ sketched just as far as needed to meet the needs of this example.
 
 # Example
 
-Here's a working example with two `PAIR` sockets interacting.
+## Send/Recv with futures.
+
+```rust
+extern crate futures;
+extern crate tokio_core;
+extern crate zmq_tokio;
+extern crate zmq;
+
+use futures::stream;
+use futures::{Future, Sink, Stream};
+use tokio_core::reactor::Core;
+
+use zmq_tokio::{Context, Socket, PAIR};
+
+const TEST_ADDR: &str = "inproc://test";
+
+fn test_pair() -> (Socket, Socket, Core) {
+    let reactor = Core::new().unwrap();
+    let handle = reactor.handle();
+    let ctx = Context::new();
+
+    let recvr = ctx.socket(PAIR, &handle).unwrap();
+    let _ = recvr.bind(TEST_ADDR).unwrap();
+
+    let sendr = ctx.socket(PAIR, &handle).unwrap();
+    let _ = sendr.connect(TEST_ADDR).unwrap();
+
+    (recvr, sendr, reactor)
+}
+
+fn main() {
+    let (mut recvr, mut sendr, mut reactor) = test_pair();
+    let msg = zmq::Message::from_slice(b"this message will be sent");
+
+    let send_future = sendr.send(msg).and_then(|_| {
+        recvr.recv()
+    }).and_then(|msg| {
+        assert_eq!(msg.as_str(), Some("this message will be sent"));
+        Ok(())
+    });
+
+    let _ = reactor.run(send_future).unwrap();
+}
+```
+
+
+## Using tokio transports.
+Here's a working example with two `PAIR` sockets interacting, using
+tokio transports directly.
 
 A `sender` socket sends a message, and a `receiver` socket reads it.
 Then, the program stops.
