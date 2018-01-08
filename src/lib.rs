@@ -157,7 +157,7 @@ use mio::Ready;
 
 use self::zmq_futures::{ReceiveMessage, SendMessage};
 /// The possible socket types.
-pub use zmq::SocketType::{PAIR, PUB, SUB, REQ, REP, DEALER, ROUTER, PULL, PUSH, XPUB, XSUB, STREAM};
+pub use zmq::SocketType::{DEALER, PAIR, PUB, PULL, PUSH, REP, REQ, ROUTER, STREAM, SUB, XPUB, XSUB};
 
 // Convenience function to determine if an I/O operation would block
 // if the error kind is `io::ErrorKind::WouldBlock`. Returns a `boolean`.
