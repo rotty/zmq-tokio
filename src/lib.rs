@@ -38,9 +38,16 @@
 //!     let (mut recvr, mut sendr, mut reactor) = test_pair();
 //!     let msg = zmq::Message::from_slice(b"this message will be sent");
 //!
-//!     let send_future = sendr.send(msg).and_then(|_| {
+//!     // Step 1: send the message
+//!     let send_future = sendr.send(msg);
+//!
+//!     // Step 2: receive the message on the pair socket
+//!     let recv_msg = send_future.and_then(|_| {
 //!         recvr.recv()
-//!     }).and_then(|msg| {
+//!     });
+//!
+//!     // Step 3: process the message and exit
+//!     let process_msg = recv_msg.and_then(|msg| {
 //!         assert_eq!(msg.as_str(), Some("this message will be sent"));
 //!         Ok(())
 //!     });
