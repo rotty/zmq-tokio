@@ -41,14 +41,19 @@
 //!
 //!     let msg = zmq::Message::from_slice(b"hello there");
 //!
+//!     // Step 1: start a stream with only one item.
 //!     let start_stream = stream::iter_ok::<_, ()>(vec![(tx, rx, msg)]);
+//!
+//!     // Step 2: send the message
 //!     let send_msg = start_stream.and_then(|(tx, rx, msg)| {
 //!             // send a message to the receiver.
 //!             // return a future with the receiver
 //!             let _ = tx.send(msg);
 //!             Ok(rx)
 //!         });
-//!     let fetch_response = send_msg.for_each(|rx| {
+//!
+//!     // Step 3: read the message
+//!     let fetch_msg = send_msg.for_each(|rx| {
 //!             // process the first response that the
 //!             // receiver gets.
 //!             // Assert that it equals the message sent
@@ -64,7 +69,11 @@
 //!             Ok(())
 //!         });
 //!
-//!     let _ = reactor.run(fetch_response).unwrap();
+//!     // Run the stream
+//!     let _ = reactor.run(fetch_msg).unwrap();
+//!
+//!     // Exit our program, playing nice.
+//!     ::std::process::exit(0);
 //! }
 //! ```
 extern crate bytes;
