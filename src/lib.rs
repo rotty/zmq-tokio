@@ -128,7 +128,6 @@
 //!     ::std::process::exit(0);
 //! }
 //! ```
-extern crate bytes;
 extern crate futures;
 extern crate futures_cpupool;
 #[macro_use]
@@ -145,27 +144,17 @@ use std::io;
 use std::io::{Read, Write};
 use std::ops::{Deref, DerefMut};
 
-use bytes::BytesMut;
 use futures::{Async, AsyncSink, Poll, StartSend};
 use futures::stream::Stream;
 use futures::sink::Sink;
 
 use tokio_core::reactor::{Handle, PollEvented};
 use tokio_io::{AsyncRead, AsyncWrite};
-use mio::Ready;
 
 use self::future::{ReceiveMessage, SendMessage};
 /// The possible socket types.
 pub use zmq::SocketType::{DEALER, PAIR, PUB, PULL, PUSH, REP, REQ, ROUTER, STREAM, SUB, XPUB, XSUB};
 
-// Convenience function to determine if an I/O operation would block
-// if the error kind is `io::ErrorKind::WouldBlock`. Returns a `boolean`.
-fn is_wouldblock<T>(r: &io::Result<T>) -> bool {
-    match *r {
-        Ok(_) => false,
-        Err(ref e) => e.kind() == io::ErrorKind::WouldBlock,
-    }
-}
 
 /// Wrapper for `zmq::Context`.
 // TODO: maybe we don't need this
@@ -231,23 +220,6 @@ impl Socket {
         self.io.get_ref().set_subscribe(prefix)
     }
 
-    /// Non-blocking send a `zmq::Message`.
-    pub fn _send(&mut self, item: &[u8], _flags: i32) -> io::Result<usize> {
-        trace!("entering send");
-        if !try!(self.poll_events()).is_writable() {
-            trace!("send - not ready");
-            return Err(mio::would_block());
-        }
-        trace!("attempting send");
-        let r = self.io.write(item);
-        if is_wouldblock(&r) {
-            self.io.need_write();
-            return Err(mio::would_block());
-        }
-        trace!("send - {:?}", r);
-        r
-    }
-
     /// Sends a type implementing `Into<zmq::Message>` as a `Future`.
     pub fn send<T: Into<zmq::Message>>(&mut self, message: T) -> SendMessage {
         SendMessage::new(self, message.into())
@@ -256,24 +228,6 @@ impl Socket {
     /// Returns a `Future` that resolves into a `zmq::Message`
     pub fn recv(&mut self) -> ReceiveMessage {
         ReceiveMessage::new(self)
-    }
-
-    /// Non-blocking recv a `zmq::Message`.
-    pub fn _recv(&mut self, _flags: i32) -> io::Result<zmq::Message> {
-        trace!("entering recv");
-        if !try!(self.poll_events()).is_readable() {
-            trace!("recv - not ready");
-            return Err(mio::would_block());
-        }
-        let mut buf = BytesMut::new();
-        let r = self.io.read(&mut buf);
-        if is_wouldblock(&r) {
-            self.io.need_read();
-            return Err(mio::would_block());
-        }
-        trace!("recv - {:?}", buf);
-        let msg = zmq::Message::from_slice(&buf);
-        Ok(msg)
     }
 
     /// Call to `poll_events` on the inner socket.
