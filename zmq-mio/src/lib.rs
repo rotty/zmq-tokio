@@ -102,7 +102,7 @@ extern crate zmq;
 use std::io;
 use std::io::{Read, Write};
 use std::fmt;
-use std::ops::Deref;
+use std::ops::DerefMut;
 use std::os::unix::io::RawFd;
 
 use mio::unix::EventedFd;
@@ -196,7 +196,12 @@ impl Socket {
         Ok(ready(zmq::POLLOUT, Ready::writable()) | ready(zmq::POLLIN, Ready::readable()))
     }
 
-    /// Send anything that implements `zmq::Sendable` over the socket.
+    /// Send a message.
+    ///
+    /// Due to the provided From implementations, this works for
+    /// `&[u8]`, `Vec<u8>` and `&str`, as well as `zmq::Message`
+    /// itself.
+    ///
     /// Any flags set will be combined with `zmq::DONTWAIT`, which is
     /// needed for non-blocking mode. The internal `zmq::Error::EAGAIN`
     /// is automatically translated to `io::ErrorKind::WouldBlock`,
@@ -205,10 +210,31 @@ impl Socket {
     where
         T: zmq::Sendable,
     {
-        match self.inner.send(item, zmq::DONTWAIT | flags) {
-            Ok(_) => Ok(()),
-            Err(e) => Err(e.into()),
-        }
+        let r = self.inner.send(item, zmq::DONTWAIT | flags).map_err(|e| e.into());
+        r
+    }
+
+    /// Send a multi-part message. Takes any iterator of valid message
+    /// types.
+    ///
+    /// Due to the provided From implementations, this works for
+    /// `&[u8]`, `Vec<u8>` and `&str`, as well as `zmq::Message`
+    /// itself.
+    ///
+    ///
+    /// Any flags set will be combined with `zmq::DONTWAIT`, which is
+    /// needed for non-blocking mode. The internal `zmq::Error::EAGAIN`
+    /// is automatically translated to `io::ErrorKind::WouldBlock`,
+    /// which you MUST handle without failing.
+    pub fn send_multipart<I, T>(&self, iter: I, flags: i32) -> io::Result<()>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<zmq::Message>,
+    {
+        let r = self.inner
+            .send_multipart(iter, zmq::DONTWAIT | flags)
+            .map_err(|e| e.into());
+        r
     }
 
     /// Read a single `zmq::Message` from the socket.
@@ -216,9 +242,88 @@ impl Socket {
     /// needed for non-blocking mode. The internal `zmq::Error::EAGAIN`
     /// is automatically translated to `io::ErrorKind::WouldBlock`,
     /// which you MUST handle without failing.
-    pub fn recv(&self, flags: i32) -> io::Result<zmq::Message> {
+    ///
+    /// Any flags set will be combined with `zmq::DONTWAIT`, which is
+    /// needed for non-blocking mode. The internal `zmq::Error::EAGAIN`
+    /// is automatically translated to `io::ErrorKind::WouldBlock`,
+    /// which you MUST handle without failing.
+    pub fn recv(&self, msg: &mut zmq::Message, flags: i32) -> io::Result<()> {
+        let r = self.inner
+            .recv(msg, zmq::DONTWAIT | flags)
+            .map_err(|e| e.into());
+        r
+    }
+
+    /// Receive bytes into a slice. The length passed to `zmq_recv` is the length
+    /// of the slice. The return value is the number of bytes in the message,
+    /// which may be larger than the length of the slice, indicating truncation.
+    ///
+    /// Any flags set will be combined with `zmq::DONTWAIT`, which is
+    /// needed for non-blocking mode. The internal `zmq::Error::EAGAIN`
+    /// is automatically translated to `io::ErrorKind::WouldBlock`,
+    /// which you MUST handle without failing.
+    pub fn recv_into(&self, msg: &mut [u8], flags: i32) -> io::Result<usize> {
+        let r = self.inner
+            .recv_into(msg, zmq::DONTWAIT | flags)
+            .map_err(|e| e.into());
+        r
+    }
+
+    /// Receive a message into a fresh `zmq::Message`.
+    ///
+    /// Any flags set will be combined with `zmq::DONTWAIT`, which is
+    /// needed for non-blocking mode. The internal `zmq::Error::EAGAIN`
+    /// is automatically translated to `io::ErrorKind::WouldBlock`,
+    /// which you MUST handle without failing.
+    pub fn recv_msg(&self, flags: i32) -> io::Result<zmq::Message> {
         let r = self.inner
             .recv_msg(zmq::DONTWAIT | flags)
+            .map_err(|e| e.into());
+        r
+    }
+
+    /// Receive a message as a byte vector.
+    ///
+    /// Any flags set will be combined with `zmq::DONTWAIT`, which is
+    /// needed for non-blocking mode. The internal `zmq::Error::EAGAIN`
+    /// is automatically translated to `io::ErrorKind::WouldBlock`,
+    /// which you MUST handle without failing.
+    pub fn recv_bytes(&self, flags: i32) -> io::Result<Vec<u8>> {
+        let r = self.inner
+            .recv_bytes(zmq::DONTWAIT | flags)
+            .map_err(|e| e.into());
+        r
+    }
+
+    /// Receive a `String` from the socket.
+    ///
+    /// If the received message is not valid UTF-8, it is returned as the
+    /// original Vec in the `Err` part of the inner result.
+    ///
+    /// Any flags set will be combined with `zmq::DONTWAIT`, which is
+    /// needed for non-blocking mode. The internal `zmq::Error::EAGAIN`
+    /// is automatically translated to `io::ErrorKind::WouldBlock`,
+    /// which you MUST handle without failing.
+    pub fn recv_string(&self, flags: i32) -> io::Result<Result<String, Vec<u8>>> {
+        let r = self.inner
+            .recv_string(zmq::DONTWAIT | flags)
+            .map_err(|e| e.into());
+        r
+    }
+
+    /// Receive a multipart message from the socket.
+    ///
+    /// Note that this will allocate a new vector for each message part;
+    /// for many applications it will be possible to process the different
+    /// parts sequentially and reuse allocations that way.
+    ///
+    /// Any flags set will be combined with `zmq::DONTWAIT`, which is
+    /// needed for non-blocking mode. The internal `zmq::Error::EAGAIN`
+    /// is automatically translated to `io::ErrorKind::WouldBlock`,
+    /// which you MUST handle without failing.
+    pub fn recv_multipart(&self, flags: i32) -> io::Result<Vec<Vec<u8>>> {
+        let r = self.inner
+            .recv_multipart(zmq::DONTWAIT | flags)
             .map_err(|e| e.into());
         r
     }
@@ -231,8 +336,9 @@ unsafe impl Send for Socket {}
 impl Read for Socket {
     /// Asynchronously read a byte buffer from the `Socket`.
     fn read(&mut self, mut buf: &mut [u8]) -> io::Result<usize> {
-        let msg = self.recv(0)?;
-        Write::write(&mut buf, msg.deref())
+        let mut msg = zmq::Message::from_slice(buf);
+        let _ = self.recv(&mut msg, 0)?;
+        Write::write(&mut buf, msg.deref_mut())
     }
 }
 
