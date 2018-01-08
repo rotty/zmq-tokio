@@ -13,7 +13,7 @@ of a client-server (`ZMQ_REQ`/`ZMQ_REP`) interaction in
 `examples/req-rep-single-threaded.rs`. The underlying library API is
 sketched just as far as needed to meet the needs of this example.
 
-# Example
+# Examples
 
 ## Send/Recv with futures.
 
