@@ -107,24 +107,33 @@ fn is_wouldblock<T>(r: &io::Result<T>) -> bool {
 // TODO: maybe we don't need this
 #[derive(Clone, Default)]
 pub struct Context {
-    ctx: zmq::Context,
+    inner: zmq::Context,
 }
 
 impl Context {
+    /// Create a new ØMQ context for the `tokio` framework.
     pub fn new() -> Context {
         Context {
-            ctx: zmq::Context::new(),
+            inner: zmq::Context::new(),
         }
     }
 
+    /// Create a new ØMQ socket for the `tokio` framework.
     pub fn socket(&self, typ: zmq::SocketType, handle: &Handle) -> io::Result<Socket> {
-        let socket = try!(self.ctx.socket(typ));
+        let socket = try!(self.inner.socket(typ));
         let new_sock: Socket = Socket::new(socket, handle)?;
         Ok(new_sock)
     }
 
-    pub fn inner(&self) -> zmq::Context {
-        self.ctx.clone()
+    /// Try to destroy the underlying context. This is different than the destructor;
+    /// the destructor will loop when zmq_ctx_destroy returns EINTR.
+    pub fn destroy(&mut self) -> io::Result<()> {
+        self.inner.destroy().map_err(|e| e.into())
+    }
+
+    /// Get a cloned instance of the underlying `zmq::Context`.
+    pub fn get_inner(&self) -> zmq::Context {
+        self.inner.clone()
     }
 }
 
