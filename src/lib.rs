@@ -155,6 +155,7 @@ use tokio_core::reactor::{Handle, PollEvented};
 use tokio_io::{AsyncRead, AsyncWrite};
 use mio::Ready;
 
+use self::zmq_futures::{ReceiveMessage, SendMessage};
 /// The possible socket types.
 pub use zmq::SocketType::{PAIR, PUB, SUB, REQ, REP, DEALER, ROUTER, PULL, PUSH, XPUB, XSUB, STREAM};
 
@@ -248,14 +249,14 @@ impl Socket {
         r
     }
 
-    /// Sends a message as a `Future`.
-    pub fn send<T: Into<zmq::Message>>(&mut self, message: T) -> self::zmq_futures::SendMessage {
-        self::zmq_futures::SendMessage::new(self, message.into())
+    /// Sends a type implementing `Into<zmq::Message>` as a `Future`.
+    pub fn send<T: Into<zmq::Message>>(&mut self, message: T) -> SendMessage {
+        SendMessage::new(self, message.into())
     }
 
     /// Returns a `Future` that resolves into a `zmq::Message`
-    pub fn recv(&mut self) -> self::zmq_futures::ReceiveMessage {
-        self::zmq_futures::ReceiveMessage::new(self)
+    pub fn recv(&mut self) -> ReceiveMessage {
+        ReceiveMessage::new(self)
     }
 
     /// Non-blocking recv a `zmq::Message`.
