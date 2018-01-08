@@ -52,7 +52,7 @@
 //!         Ok(())
 //!     });
 //!
-//!     let _ = reactor.run(send_future).unwrap();
+//!     let _ = reactor.run(process_msg).unwrap();
 //! }
 //! ```
 //!
