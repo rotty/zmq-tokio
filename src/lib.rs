@@ -214,13 +214,13 @@ impl Socket {
 
 unsafe impl Send for Socket {}
 
-impl io::Read for Socket {
+impl Read for Socket {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.io.read(buf)
     }
 }
 
-impl io::Write for Socket {
+impl Write for Socket {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.io.write(buf)
     }
