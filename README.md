@@ -26,10 +26,8 @@ Everything runs within on a tokio reactor.
 extern crate futures;
 extern crate tokio_core;
 extern crate zmq_tokio;
-extern crate zmq;
 
-use futures::stream;
-use futures::{Future, Sink, Stream};
+use futures::Future;
 use tokio_core::reactor::Core;
 
 use zmq_tokio::{Context, Socket, PAIR};
@@ -73,10 +71,8 @@ fn main() {
 extern crate futures;
 extern crate tokio_core;
 extern crate zmq_tokio;
-extern crate zmq;
 
-use futures::stream;
-use futures::{Future, Sink, Stream};
+use futures::Future;
 use tokio_core::reactor::Core;
 
 use zmq_tokio::{Context, Socket, PAIR};
@@ -119,13 +115,11 @@ fn main() {
 extern crate futures;
 extern crate tokio_core;
 extern crate zmq_tokio;
-extern crate zmq;
 
-use futures::stream;
-use futures::{Future, Sink, Stream};
+use futures::{Future, Sink, Stream, stream};
 use tokio_core::reactor::Core;
 
-use zmq_tokio::{Context, Socket, PAIR};
+use zmq_tokio::{Context, Message, Socket, PAIR};
 
 const TEST_ADDR: &str = "inproc://test";
 
@@ -144,7 +138,7 @@ fn main() {
     let (_, rx) = recvr.framed().split();
     let (tx, _) = sendr.framed().split();
 
-    let msg = zmq::Message::from_slice(b"hello there");
+    let msg = Message::from_slice(b"hello there");
 
     // Step 1: start a stream with only one item.
     let start_stream = stream::iter_ok::<_, ()>(vec![(tx, rx, msg)]);
