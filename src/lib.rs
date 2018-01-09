@@ -157,35 +157,32 @@ pub use zmq::SocketType::{DEALER, PAIR, PUB, PULL, PUSH, REP, REQ, ROUTER, STREA
 
 
 /// Wrapper for `zmq::Context`.
-// TODO: maybe we don't need this
 #[derive(Clone, Default)]
 pub struct Context {
-    inner: zmq::Context,
+    inner: zmq_mio::Context,
 }
 
 impl Context {
     /// Create a new ØMQ context for the `tokio` framework.
     pub fn new() -> Context {
         Context {
-            inner: zmq::Context::new(),
+            inner: zmq_mio::Context::new(),
         }
     }
 
     /// Create a new ØMQ socket for the `tokio` framework.
-    pub fn socket(&self, typ: zmq::SocketType, handle: &Handle) -> io::Result<Socket> {
-        let socket = try!(self.inner.socket(typ));
-        let new_sock: Socket = Socket::new(socket, handle)?;
-        Ok(new_sock)
+    pub fn socket(&self, typ: SocketType, handle: &Handle) -> io::Result<Socket> {
+        Ok(Socket::new(try!(self.inner.socket(typ)), handle)?)
     }
 
     /// Try to destroy the underlying context. This is different than the destructor;
     /// the destructor will loop when zmq_ctx_destroy returns EINTR.
     pub fn destroy(&mut self) -> io::Result<()> {
-        self.inner.destroy().map_err(|e| e.into())
+        self.inner.destroy()
     }
 
-    /// Get a cloned instance of the underlying `zmq::Context`.
-    pub fn get_inner(&self) -> zmq::Context {
+    /// Get a cloned instance of the underlying `zmq_mio::Context`.
+    pub fn get_inner(&self) -> zmq_mio::Context {
         self.inner.clone()
     }
 }
@@ -199,25 +196,31 @@ pub struct Socket {
 impl Socket {
     /// Create a new poll-evented ØMQ socket, along with a tokio reactor handle
     /// to drive its event-loop.
-    pub fn new(socket: zmq::Socket, handle: &Handle) -> io::Result<Self> {
-        let io = try!(PollEvented::new(zmq_mio::Socket::new(socket), handle));
+    fn new(socket: zmq_mio::Socket, handle: &Handle) -> io::Result<Self> {
+        let io = try!(PollEvented::new(socket, handle));
         let socket = Socket { io };
         Ok(socket)
     }
 
+    /// A reference to the underlying `zmq_mio::Socket`. Useful
+    /// for building futures.
+    pub fn get_mio_ref(&self) -> &zmq_mio::Socket {
+        self.io.get_ref()
+    }
+
     /// Bind the underlying socket to the given address.
     pub fn bind(&self, address: &str) -> io::Result<()> {
-        self.io.get_ref().bind(address)
+        self.get_mio_ref().bind(address)
     }
 
     /// Connect the underlying socket to the given address.
     pub fn connect(&self, address: &str) -> io::Result<()> {
-        self.io.get_ref().connect(address)
+        self.get_mio_ref().connect(address)
     }
 
     /// Subscribe the underlying socket to the given prefix.
     pub fn set_subscribe(&self, prefix: &[u8]) -> io::Result<()> {
-        self.io.get_ref().set_subscribe(prefix)
+        self.get_mio_ref().set_subscribe(prefix)
     }
 
     /// Sends a type implementing `Into<zmq::Message>` as a `Future`.
