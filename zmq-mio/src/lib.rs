@@ -77,7 +77,7 @@
 //!                     // if the listener is readable, then we try to receive
 //!                     // it. If reading is not possible because of blocking, then
 //!                     // we continue handling events.
-//!                     let msg = match listener.recv(0) {
+//!                     let msg = match listener.recv_msg(0) {
 //!                         Ok(m) => m,
 //!                         Err(e) => {
 //!                             if e.kind() == io::ErrorKind::WouldBlock {
@@ -102,7 +102,6 @@ extern crate zmq;
 use std::io;
 use std::io::{Read, Write};
 use std::fmt;
-use std::ops::DerefMut;
 use std::os::unix::io::RawFd;
 
 use mio::unix::EventedFd;
@@ -335,10 +334,9 @@ unsafe impl Send for Socket {}
 /// if not handled via polling.
 impl Read for Socket {
     /// Asynchronously read a byte buffer from the `Socket`.
-    fn read(&mut self, mut buf: &mut [u8]) -> io::Result<usize> {
-        let mut msg = zmq::Message::from_slice(buf);
-        let _ = self.recv(&mut msg, 0)?;
-        Write::write(&mut buf, msg.deref_mut())
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let r = self.recv_into(buf, 0)?;
+        Ok(r)
     }
 }
 

@@ -69,7 +69,7 @@ impl EchoServer {
     }
 
     fn readable(&mut self, poll: &Poll) -> io::Result<()> {
-        match self.sock.recv(0) {
+        match self.sock.recv_msg(0) {
             Ok(msg) => {
                 self.msg = Some(msg);
 
@@ -123,7 +123,7 @@ impl EchoClient {
     }
 
     fn readable(&mut self, poll: &Poll) -> io::Result<()> {
-        match self.sock.recv(0) {
+        match self.sock.recv_msg(0) {
             Ok(msg) => {
                 let n = msg.len();
                 assert_eq!(&self.rx[..n], &msg[..n]);
