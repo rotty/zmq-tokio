@@ -269,9 +269,9 @@ impl Socket {
 
     /// Sends a type implementing `Into<zmq::Message>` as a `Future`.
     pub fn send_multipart<I, T>(&self, messages: I) -> SendMultipartMessage
-        where
-            I: IntoIterator<Item = T>,
-            T: Into<Vec<u8>>,
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<Vec<u8>>,
     {
         SendMultipartMessage::new(self, messages)
     }

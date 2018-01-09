@@ -67,9 +67,7 @@ impl<'a> Future for SendMultipartMessage<'a> {
                     Err(e)
                 }
             }
-            Ok(_) => {
-                Ok(Async::Ready(()))
-            }
+            Ok(_) => Ok(Async::Ready(())),
         }
     }
 }
@@ -131,9 +129,7 @@ impl<'a> Future for ReceiveMessage<'a> {
                     Err(e)
                 }
             }
-            Ok(msg) => {
-                Ok(Async::Ready(msg))
-            }
+            Ok(msg) => Ok(Async::Ready(msg)),
         }
     }
 }
