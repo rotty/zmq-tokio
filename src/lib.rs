@@ -192,7 +192,7 @@ use futures::sink::Sink;
 use tokio_core::reactor::{Handle, PollEvented};
 use tokio_io::{AsyncRead, AsyncWrite};
 
-use self::future::{ReceiveMessage, SendMessage};
+use self::future::{ReceiveMessage, ReceiveMultipartMessage, SendMessage, SendMultipartMessage};
 /// The possible socket types.
 pub use io::{Error};
 pub use zmq::{SNDMORE, SocketType};
@@ -268,18 +268,27 @@ impl Socket {
     }
 
     /// Sends a type implementing `Into<zmq::Message>` as a `Future`.
-    pub fn send<T: Into<zmq::Message>>(&mut self, message: T) -> SendMessage {
+    pub fn send<T: Into<zmq::Message>>(&self, message: T) -> SendMessage {
         SendMessage::new(self, message.into())
     }
 
+    /// Sends a type implementing `Into<zmq::Message>` as a `Future`.
+    pub fn send_multipart<I, T>(&self, messages: I) -> SendMultipartMessage
+        where
+            I: IntoIterator<Item = T>,
+            T: Into<Vec<u8>>,
+    {
+        SendMultipartMessage::new(self, messages)
+    }
+
     /// Returns a `Future` that resolves into a `zmq::Message`
-    pub fn recv(&mut self) -> ReceiveMessage {
+    pub fn recv(&self) -> ReceiveMessage {
         ReceiveMessage::new(self)
     }
 
-    /// Call to `poll_events` on the inner socket.
-    fn poll_events(&self) -> io::Result<Ready> {
-        self.io.get_ref().poll_events()
+    /// Returns a `Future` that resolves into a `Vec<zmq::Message>`
+    pub fn recv_multipart(&self) -> ReceiveMultipartMessage {
+        ReceiveMultipartMessage::new(self)
     }
 
     pub fn framed(self) -> SocketFramed<Self> {
@@ -381,9 +390,4 @@ where
             }
         }
     }
-}
-
-#[cfg(test)]
-mod tests {
-    // No unit tests yet. Checkout the integration and doctests.
 }
