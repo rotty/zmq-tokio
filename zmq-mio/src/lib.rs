@@ -4,6 +4,7 @@
 //! implementations of `io::Write` and `io::Read`.
 //!
 //! # Example
+//!
 //! ```
 //! extern crate mio;
 //! extern crate zmq;
