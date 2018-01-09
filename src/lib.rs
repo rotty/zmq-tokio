@@ -190,11 +190,10 @@ use tokio_io::{AsyncRead, AsyncWrite};
 
 use self::future::{ReceiveMessage, ReceiveMultipartMessage, SendMessage, SendMultipartMessage};
 /// The possible socket types.
-pub use io::{Error};
-pub use zmq::{SNDMORE, SocketType};
+pub use io::Error;
+pub use zmq::{Message, SocketType, SNDMORE};
 
 pub use SocketType::{DEALER, PAIR, PUB, PULL, PUSH, REP, REQ, ROUTER, STREAM, SUB, XPUB, XSUB};
-
 
 /// Wrapper for `zmq::Context`.
 #[derive(Clone, Default)]
