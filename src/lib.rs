@@ -5,7 +5,7 @@
 //!
 //! # Examples
 //!
-//! ## Sending and receiving simple messages with `Future`
+//! ## Sending and receiving simple messages with futures
 //!
 //! A PAIR of sockets is created. The `sender` socket sends
 //! a message, and the `receiver` gets it.
@@ -31,10 +31,10 @@
 //!     let mut reactor = Core::new().unwrap();
 //!     let context = Context::new();
 //!
-//!     let mut recvr = context.socket(PAIR, &reactor.handle()).unwrap();
+//!     let recvr = context.socket(PAIR, &reactor.handle()).unwrap();
 //!     let _ = recvr.bind(TEST_ADDR).unwrap();
 //!
-//!     let mut sendr = context.socket(PAIR, &reactor.handle()).unwrap();
+//!     let sendr = context.socket(PAIR, &reactor.handle()).unwrap();
 //!     let _ = sendr.connect(TEST_ADDR).unwrap();
 //!
 //!     // Step 1: send any type implementing `Into<zmq::Message>`,
@@ -57,7 +57,8 @@
 //! }
 //! ```
 //!
-//! ## Sending and receiving multi-part messages with `Future`
+//! ## Sending and receiving multi-part messages with futures
+//!
 //! ```
 //! extern crate futures;
 //! extern crate tokio_core;
@@ -76,10 +77,10 @@
 //!     let mut reactor = Core::new().unwrap();
 //!     let context = Context::new();
 //!
-//!     let mut recvr = context.socket(PAIR, &reactor.handle()).unwrap();
+//!     let recvr = context.socket(PAIR, &reactor.handle()).unwrap();
 //!     let _ = recvr.bind(TEST_ADDR).unwrap();
 //!
-//!     let mut sendr = context.socket(PAIR, &reactor.handle()).unwrap();
+//!     let sendr = context.socket(PAIR, &reactor.handle()).unwrap();
 //!     let _ = sendr.connect(TEST_ADDR).unwrap();
 //!
 //!     let msgs: Vec<Vec<u8>> = vec![b"hello".to_vec(), b"goodbye".to_vec()];
@@ -102,7 +103,8 @@
 //! }
 //! ```
 //!
-//! ## Manual handling using `Transport`
+//! ## Manual handling using tranports with `Sink` and `Stream`
+//!
 //! ```
 //! extern crate futures;
 //! extern crate tokio_core;
