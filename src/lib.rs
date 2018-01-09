@@ -6,6 +6,12 @@
 //! # Examples
 //!
 //! ## Sending and receiving simple messages with `Future`
+//!
+//! A PAIR of sockets is created. The `sender` socket sends
+//! a message, and the `receiver` gets it.
+//!
+//! Everything runs within on a tokio reactor.
+//!
 //! ```
 //! extern crate futures;
 //! extern crate tokio_core;
@@ -20,26 +26,21 @@
 //!
 //! const TEST_ADDR: &str = "inproc://test";
 //!
-//! fn test_pair() -> (Socket, Socket, Core) {
-//!     let reactor = Core::new().unwrap();
-//!     let handle = reactor.handle();
-//!     let ctx = Context::new();
-//!
-//!     let recvr = ctx.socket(PAIR, &handle).unwrap();
-//!     let _ = recvr.bind(TEST_ADDR).unwrap();
-//!
-//!     let sendr = ctx.socket(PAIR, &handle).unwrap();
-//!     let _ = sendr.connect(TEST_ADDR).unwrap();
-//!
-//!     (recvr, sendr, reactor)
-//! }
 //!
 //! fn main() {
-//!     let (mut recvr, mut sendr, mut reactor) = test_pair();
-//!     let msg = zmq::Message::from_slice(b"this message will be sent");
+//!     let mut reactor = Core::new().unwrap();
+//!     let context = Context::new();
 //!
-//!     // Step 1: send the message
-//!     let send_future = sendr.send(msg);
+//!     let mut recvr = context.socket(PAIR, &reactor.handle()).unwrap();
+//!     let _ = recvr.bind(TEST_ADDR).unwrap();
+//!
+//!     let mut sendr = context.socket(PAIR, &reactor.handle()).unwrap();
+//!     let _ = sendr.connect(TEST_ADDR).unwrap();
+//!
+//!     // Step 1: send any type implementing `Into<zmq::Message>`,
+//!     //         meaning `&[u8]`, `Vec<u8>`, `String`, `&str`,
+//!     //         and `zmq::Message` itself.
+//!     let send_future = sendr.send("this message will be sent");
 //!
 //!     // Step 2: receive the message on the pair socket
 //!     let recv_msg = send_future.and_then(|_| {
@@ -49,6 +50,51 @@
 //!     // Step 3: process the message and exit
 //!     let process_msg = recv_msg.and_then(|msg| {
 //!         assert_eq!(msg.as_str(), Some("this message will be sent"));
+//!         Ok(())
+//!     });
+//!
+//!     let _ = reactor.run(process_msg).unwrap();
+//! }
+//! ```
+//!
+//! ## Sending and receiving multi-part messages with `Future`
+//! ```
+//! extern crate futures;
+//! extern crate tokio_core;
+//! extern crate zmq_tokio;
+//! extern crate zmq;
+//!
+//! use futures::stream;
+//! use futures::{Future, Sink, Stream};
+//! use tokio_core::reactor::Core;
+//!
+//! use zmq_tokio::{Context, Socket, PAIR};
+//!
+//! const TEST_ADDR: &str = "inproc://test";
+//!
+//! fn main() {
+//!     let mut reactor = Core::new().unwrap();
+//!     let context = Context::new();
+//!
+//!     let mut recvr = context.socket(PAIR, &reactor.handle()).unwrap();
+//!     let _ = recvr.bind(TEST_ADDR).unwrap();
+//!
+//!     let mut sendr = context.socket(PAIR, &reactor.handle()).unwrap();
+//!     let _ = sendr.connect(TEST_ADDR).unwrap();
+//!
+//!     let msgs: Vec<Vec<u8>> = vec![b"hello".to_vec(), b"goodbye".to_vec()];
+//!     // Step 1: send a vector of byte-vectors, `Vec<Vec<u8>>`
+//!     let send_future = sendr.send_multipart(msgs);
+//!
+//!     // Step 2: receive the message on the pair socket
+//!     let recv_msg = send_future.and_then(|_| {
+//!         recvr.recv_multipart()
+//!     });
+//!
+//!     // Step 3: process the message and exit
+//!     let process_msg = recv_msg.and_then(|msgs| {
+//!         assert_eq!(msgs[0].as_str(), Some("hello"));
+//!         assert_eq!(msgs[1].as_str(), Some("goodbye"));
 //!         Ok(())
 //!     });
 //!
@@ -71,22 +117,17 @@
 //!
 //! const TEST_ADDR: &str = "inproc://test";
 //!
-//! fn test_pair() -> (Socket, Socket, Core) {
-//!     let reactor = Core::new().unwrap();
-//!     let handle = reactor.handle();
-//!     let ctx = Context::new();
-//!
-//!     let recvr = ctx.socket(PAIR, &handle).unwrap();
-//!     let _ = recvr.bind(TEST_ADDR).unwrap();
-//!
-//!     let sendr = ctx.socket(PAIR, &handle).unwrap();
-//!     let _ = sendr.connect(TEST_ADDR).unwrap();
-//!
-//!     (recvr, sendr, reactor)
-//! }
 //!
 //! fn main() {
-//!     let (recvr, sendr, mut reactor) = test_pair();
+//!     let mut reactor = Core::new().unwrap();
+//!     let context = Context::new();
+//!
+//!     let recvr = context.socket(PAIR, &reactor.handle()).unwrap();
+//!     let _ = recvr.bind(TEST_ADDR).unwrap();
+//!
+//!     let sendr = context.socket(PAIR, &reactor.handle()).unwrap();
+//!     let _ = sendr.connect(TEST_ADDR).unwrap();
+//!
 //!
 //!     let (_, rx) = recvr.framed().split();
 //!     let (tx, _) = sendr.framed().split();
