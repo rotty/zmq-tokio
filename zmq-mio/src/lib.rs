@@ -139,6 +139,11 @@ impl Context {
     pub fn destroy(&mut self) -> io::Result<()> {
         self.inner.destroy().map_err(|e| e.into())
     }
+
+    /// Get a cloned instance of the underlying `zmq::Context`.
+    pub fn get_inner(&self) -> zmq::Context {
+        self.inner.clone()
+    }
 }
 
 // mio integration, should probably be put into its own crate eventually
