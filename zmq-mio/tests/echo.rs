@@ -1,8 +1,8 @@
 // Modeled after tests/echo.rs from mio-uds.
 
-extern crate futures;
-#[macro_use] extern crate log;
 extern crate env_logger;
+extern crate futures;
+extern crate log;
 
 extern crate mio;
 extern crate zmq;
@@ -13,6 +13,7 @@ use std::io::ErrorKind::WouldBlock;
 
 use zmq::Message;
 use mio::{Events, Poll, PollOpt, Ready, Token};
+use mio::unix::UnixReady;
 use zmq_mio::{Context, Socket};
 
 macro_rules! t {
@@ -38,12 +39,12 @@ impl EchoServer {
         EchoServer {
             sock: sock,
             msg: None,
-            interest: Ready::hup() | Ready::readable(),
+            interest: Ready::readable() | UnixReady::hup(),
         }
     }
 
     fn writable(&mut self, poll: &Poll) -> io::Result<()> {
-        match self.sock.send(self.msg.take().unwrap()) {
+        match self.sock.send(self.msg.take().unwrap(), 0) {
             Ok(_) => {
                 self.interest.insert(Ready::readable());
                 self.interest.remove(Ready::writable());
@@ -54,14 +55,21 @@ impl EchoServer {
             Err(e) => panic!("not implemented; client err={:?}", e),
         }
 
-        assert!(self.interest.is_readable() || self.interest.is_writable(),
-                "actual={:?}", self.interest);
-        poll.reregister(&self.sock, SERVER, self.interest,
-                        PollOpt::edge() | PollOpt::oneshot())
+        assert!(
+            self.interest.is_readable() || self.interest.is_writable(),
+            "actual={:?}",
+            self.interest
+        );
+        poll.reregister(
+            &self.sock,
+            SERVER,
+            self.interest,
+            PollOpt::edge() | PollOpt::oneshot(),
+        )
     }
 
     fn readable(&mut self, poll: &Poll) -> io::Result<()> {
-        match self.sock.recv() {
+        match self.sock.recv_msg(0) {
             Ok(msg) => {
                 self.msg = Some(msg);
 
@@ -74,10 +82,17 @@ impl EchoServer {
             }
         }
 
-        assert!(self.interest.is_readable() || self.interest.is_writable(),
-                "actual={:?}", self.interest);
-        poll.reregister(&self.sock, SERVER, self.interest,
-                        PollOpt::edge() | PollOpt::oneshot())
+        assert!(
+            self.interest.is_readable() || self.interest.is_writable(),
+            "actual={:?}",
+            self.interest
+        );
+        poll.reregister(
+            &self.sock,
+            SERVER,
+            self.interest,
+            PollOpt::edge() | PollOpt::oneshot(),
+        )
     }
 }
 
@@ -91,7 +106,6 @@ struct EchoClient {
     active: bool,
 }
 
-
 // Sends a message and expects to receive the same exact message, one at a time
 impl EchoClient {
     fn new(sock: Socket, tok: Token, mut msgs: Vec<&'static str>) -> EchoClient {
@@ -103,13 +117,13 @@ impl EchoClient {
             tx: curr.as_bytes(),
             rx: curr.as_bytes(),
             token: tok,
-            interest: Ready::none(),
+            interest: Ready::empty(),
             active: true,
         }
     }
 
     fn readable(&mut self, poll: &Poll) -> io::Result<()> {
-        match self.sock.recv() {
+        match self.sock.recv_msg(0) {
             Ok(msg) => {
                 let n = msg.len();
                 assert_eq!(&self.rx[..n], &msg[..n]);
@@ -125,18 +139,25 @@ impl EchoClient {
             Err(e) => panic!("error {}", e),
         }
 
-        if !self.interest.is_none() {
-            assert!(self.interest.is_readable() || self.interest.is_writable(),
-                    "actual={:?}", self.interest);
-            try!(poll.reregister(&self.sock, self.token, self.interest,
-                                 PollOpt::edge() | PollOpt::oneshot()));
+        if !self.interest.is_empty() {
+            assert!(
+                self.interest.is_readable() || self.interest.is_writable(),
+                "actual={:?}",
+                self.interest
+            );
+            try!(poll.reregister(
+                &self.sock,
+                self.token,
+                self.interest,
+                PollOpt::edge() | PollOpt::oneshot()
+            ));
         }
 
         Ok(())
     }
 
     fn writable(&mut self, poll: &Poll) -> io::Result<()> {
-        match self.sock.send(self.tx) {
+        match self.sock.send(self.tx, 0) {
             Ok(_) => {
                 self.tx = &self.tx[self.tx.len()..];
                 self.interest.insert(Ready::readable());
@@ -145,13 +166,20 @@ impl EchoClient {
             Err(ref e) if e.kind() == WouldBlock => {
                 self.interest.insert(Ready::writable());
             }
-            Err(e) => panic!("not implemented; client err={:?}", e)
+            Err(e) => panic!("not implemented; client err={:?}", e),
         }
 
-        assert!(self.interest.is_readable() || self.interest.is_writable(),
-                "actual={:?}", self.interest);
-        poll.reregister(&self.sock, self.token, self.interest,
-                        PollOpt::edge() | PollOpt::oneshot())
+        assert!(
+            self.interest.is_readable() || self.interest.is_writable(),
+            "actual={:?}",
+            self.interest
+        );
+        poll.reregister(
+            &self.sock,
+            self.token,
+            self.interest,
+            PollOpt::edge() | PollOpt::oneshot(),
+        )
     }
 
     fn next_msg(&mut self, poll: &Poll) -> io::Result<()> {
@@ -166,10 +194,17 @@ impl EchoClient {
         self.rx = curr.as_bytes();
 
         self.interest.insert(Ready::writable());
-        assert!(self.interest.is_readable() || self.interest.is_writable(),
-                "actual={:?}", self.interest);
-        poll.reregister(&self.sock, self.token, self.interest,
-                        PollOpt::edge() | PollOpt::oneshot())
+        assert!(
+            self.interest.is_readable() || self.interest.is_writable(),
+            "actual={:?}",
+            self.interest
+        );
+        poll.reregister(
+            &self.sock,
+            self.token,
+            self.interest,
+            PollOpt::edge() | PollOpt::oneshot(),
+        )
     }
 }
 
@@ -182,20 +217,17 @@ impl Echo {
     fn new(srv: Socket, client: Socket, msgs: Vec<&'static str>) -> Echo {
         Echo {
             server: EchoServer::new(srv),
-            client: EchoClient::new(client, CLIENT, msgs)
+            client: EchoClient::new(client, CLIENT, msgs),
         }
     }
 
-    fn ready(&mut self,
-             poll: &Poll,
-             token: Token,
-             events: Ready) {
+    fn ready(&mut self, poll: &Poll, token: Token, events: Ready) {
         println!("ready {:?} {:?}", token, events);
         if events.is_readable() {
             match token {
                 SERVER => self.server.readable(poll).unwrap(),
                 CLIENT => self.client.readable(poll).unwrap(),
-                _ => panic!()
+                _ => panic!(),
             }
         }
 
@@ -203,7 +235,7 @@ impl Echo {
             match token {
                 SERVER => self.server.writable(poll).unwrap(),
                 CLIENT => self.client.writable(poll).unwrap(),
-                _ => panic!()
+                _ => panic!(),
             }
         }
     }
@@ -217,27 +249,30 @@ fn echo_server() {
     let poll = t!(Poll::new());
     let mut events = Events::with_capacity(1024);
 
-    let mut srv = t!(ctx.socket(zmq::REP));
+    let srv = t!(ctx.socket(zmq::REP));
     t!(srv.bind(&addr));
-    t!(poll.register(&srv,
-                     SERVER,
-                     Ready::readable(),
-                     PollOpt::edge() | PollOpt::oneshot()));
+    t!(poll.register(
+        &srv,
+        SERVER,
+        Ready::readable(),
+        PollOpt::edge() | PollOpt::oneshot()
+    ));
 
-    let mut sock = t!(ctx.socket(zmq::REQ));
+    let sock = t!(ctx.socket(zmq::REQ));
     t!(sock.connect(&addr));
-    t!(poll.register(&sock,
-                     CLIENT,
-                     Ready::writable(),
-                     PollOpt::edge() | PollOpt::oneshot()));
+    t!(poll.register(
+        &sock,
+        CLIENT,
+        Ready::writable(),
+        PollOpt::edge() | PollOpt::oneshot()
+    ));
 
     let mut echo = Echo::new(srv, sock, vec!["foo", "bar"]);
     while echo.client.active {
         t!(poll.poll(&mut events, None));
 
-        for i in 0..events.len() {
-            let event = events.get(i).unwrap();
-            echo.ready(&poll, event.token(), event.kind());
+        for event in &events {
+            echo.ready(&poll, event.token(), event.readiness());
         }
     }
 }
