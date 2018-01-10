@@ -1,8 +1,15 @@
-This is the barely budding seed of providing access to
-[ZeroMQ](http://zeromq.org/) via the tokio async I/O abstraction.
+ØMQ (ZeroMQ) for tokio
+======================
+
+Run ØMQ sockets using `tokio` reactors, futures, etc.
 
 Status
 ------
+
+This is the barely budding seed of providing access to
+[ZeroMQ](http://zeromq.org/) via the tokio async I/O abstraction.
+
+This crate uses [rust-zmq](https://github.com/erickt/rust-zmq)'s bindings.
 
 This project is in its very infancy. Do not expect to be able to build
 something useful on top of this (yet). The API will certainly change
@@ -13,9 +20,11 @@ of a client-server (`ZMQ_REQ`/`ZMQ_REP`) interaction in
 `examples/req-rep-single-threaded.rs`. The underlying library API is
 sketched just as far as needed to meet the needs of this example.
 
-# Examples
+Examples
+========
 
-## Sending and receiving simple messages with futures
+Sending and receiving simple messages with futures
+--------------------------------------------------
 
 A PAIR of sockets is created. The `sender` socket sends
 a message, and the `receiver` gets it.
@@ -65,7 +74,8 @@ fn main() {
 }
 ```
 
-## Sending and receiving multi-part messages with futures
+Sending and receiving multi-part messages with futures
+------------------------------------------------------
 
 ```rust
 extern crate futures;
