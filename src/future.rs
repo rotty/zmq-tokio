@@ -1,19 +1,18 @@
-//! Futures for ØMQ tasks.
+//! Futures for ØMQ sockets.
 use std::io;
 
 use futures::{Async, Future, Poll};
-use zmq;
 
-use super::Socket;
+use super::{Message, Socket};
 
-/// A Future that sends a `zmq::Message` asynchronously. This is returned by `Socket::send`
+/// A Future that sends a `Message` asynchronously. This is returned by `Socket::send`
 pub struct SendMessage<'a> {
     socket: &'a Socket,
-    message: zmq::Message,
+    message: Message,
 }
 
 impl<'a> SendMessage<'a> {
-    pub fn new(socket: &'a Socket, message: zmq::Message) -> SendMessage {
+    pub fn new(socket: &'a Socket, message: Message) -> SendMessage {
         SendMessage { socket, message }
     }
 }
@@ -36,7 +35,7 @@ impl<'a> Future for SendMessage<'a> {
     }
 }
 
-/// A Future that sends a multi-part `zmq::Message` asynchronously.
+/// A Future that sends a multi-part `Message` asynchronously.
 /// This is returned by `Socket::send_multipart`
 pub struct SendMultipartMessage<'a> {
     socket: &'a Socket,
@@ -72,7 +71,7 @@ impl<'a> Future for SendMultipartMessage<'a> {
     }
 }
 
-/// A Future that receives a multi-part `zmq::Message` asynchronously.
+/// A Future that receives a multi-part `Message` asynchronously.
 /// This is returned by `Socket::recv_multipart`
 pub struct ReceiveMultipartMessage<'a> {
     socket: &'a Socket,
@@ -85,7 +84,7 @@ impl<'a> ReceiveMultipartMessage<'a> {
 }
 
 impl<'a> Future for ReceiveMultipartMessage<'a> {
-    type Item = Vec<zmq::Message>;
+    type Item = Vec<Message>;
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
@@ -98,14 +97,14 @@ impl<'a> Future for ReceiveMultipartMessage<'a> {
                 }
             }
             Ok(msgs) => {
-                let m_out = msgs.iter().map(|v| v.into()).collect::<Vec<zmq::Message>>();
+                let m_out = msgs.iter().map(|v| v.into()).collect::<Vec<Message>>();
                 Ok(Async::Ready(m_out))
             }
         }
     }
 }
 
-/// A Future that receives a `zmq::Message` asynchronously. This is returned by `Socket::recv`
+/// A Future that receives a `Message` asynchronously. This is returned by `Socket::recv`
 pub struct ReceiveMessage<'a> {
     socket: &'a Socket,
 }
@@ -117,7 +116,7 @@ impl<'a> ReceiveMessage<'a> {
 }
 
 impl<'a> Future for ReceiveMessage<'a> {
-    type Item = zmq::Message;
+    type Item = Message;
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
