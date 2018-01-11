@@ -325,6 +325,12 @@ impl Socket {
             .map_err(|e| e.into());
         r
     }
+
+    /// Get the SocketType
+    pub fn get_socket_type(&self) -> io::Result<zmq::SocketType> {
+        let r = self.get_ref().get_socket_type().map_err(|e| e.into());
+        r
+    }
 }
 
 unsafe impl Send for Socket {}
