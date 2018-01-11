@@ -304,6 +304,11 @@ impl Socket {
         ReceiveMultipartMessage::new(self)
     }
 
+    /// Get the SocketType
+    pub fn get_socket_type(&self) -> io::Result<zmq::SocketType> {
+        self.get_mio_ref().get_socket_type()
+    }
+
     pub fn framed(self) -> SocketFramed<Self> {
         SocketFramed::new(self)
     }
