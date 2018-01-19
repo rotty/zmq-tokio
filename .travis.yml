@@ -1,0 +1,65 @@
+# this is basically can emulation of what https://github.com/erickt/rust-zmq has
+# for configured for Travis CI.
+language: rust
+sudo: false
+rust:
+    - nightly
+addons:
+  apt:
+    packages:
+    - libcurl4-openssl-dev
+    - libelf-dev
+    - libdw-dev
+    - make
+    - automake
+    - gcc
+    - build-essential
+    - g++
+    - cpp
+    - libc6-dev
+    - man-db
+    - autoconf
+    - pkg-config
+    - libtool
+    - git
+
+before_script:
+- |
+  set -e
+  pip install 'travis-cargo<0.2' --user
+  git clone --depth 1 -b stable https://github.com/jedisct1/libsodium.git
+  cd libsodium
+  ./autogen.sh
+  ./configure --prefix=$HOME
+  make
+  make install
+  cd ..
+  wget https://github.com/zeromq/zeromq4-1/archive/v4.1.6.tar.gz
+  tar zxf v4.1.6.tar.gz
+  cd zeromq4-1-4.1.6
+  ./autogen.sh
+  ./configure --prefix=$HOME --with-libsodium
+  make
+  make install
+  cd ..
+cache: cargo
+
+script:
+- |
+    travis-cargo build -- --all &&
+    travis-cargo test -- --all # &&
+
+### TODO:
+## generate and upload documentation
+## once https://github.com/rust-lang/rust/issues/47391 has been closed
+    # travis-cargo --only nightly doc --no-deps &&
+    # travis-cargo --only nightly doc -p zmq_mio --no-deps
+# after_success:
+#   - travis-cargo --only nightly doc-upload
+
+env:
+  global:
+  - PATH=$HOME/.local/bin:$PATH
+  - LD_LIBRARY_PATH=$HOME/lib
+  - PKG_CONFIG_PATH=$HOME/lib/pkgconfig
+  - TRAVIS_CARGO_NIGHTLY_FEATURE=""
