@@ -409,3 +409,19 @@ where
         }
     }
 }
+
+/// API methods for sending messages with sockets.
+pub trait SocketSend {
+    /// Send a message.
+    ///
+    /// Due to the provided From implementations, this works for `&[u8]`, `Vec<u8>` and `&str`,
+    /// as well as on `Message` itself.
+    fn send<T>(&self, T, i32) -> io::Result<()>
+    where
+        T: zmq::Sendable;
+    /// Sends a multipart-message.
+    fn send_multipart<I, T>(&self, I, i32) -> io::Result<()>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<Message>;
+}
