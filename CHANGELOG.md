@@ -6,6 +6,27 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 ### Added
+- Added `zmq_tokio::convert_into_tokio_socket` function as a convenience for developers.
+- Added `examples/requester-multipart.rs`, a REQ client that sends a couple of multi-part messages, always getting a response.
+- Added `examples/responder-multipart.rs`, a REP server that listens for incoming multi-part messages, responding with another message.
+- Added `examples/requester.rs`, a REQ client that sends a couple of single-part messages, always getting a response.
+- Added `examples/responder.rs`, a REP server that listens for incoming single-part messages, responding with another message.
+- Added `zmq_tokio::transport::MessageTransport`, which implements both `Sink` and `Stream`, for handling single-part messages.
+- Added `zmq_tokio::transport::MultipartMessageTransport`, which implements both `Sink` and `Stream`, for handling multi-part messages.
+- Added `MultipartMessageStream` for single-part message streaming.
+- Added `MessageStream` for single-part message streaming.
+- Defined the `SocketRecv` trait to have a method API for receiving messages with ZeroMQ.
+- Defined the `SocketSend` trait to have a method API for sending messages with ZeroMQ.
+
+### Changed
+- Cleaned-up the prelude by removing piecewise re-exports from `zmq`, in favor of re-exporiting the whole crate.
+
+### Fixed
+- `zmq_tokio::Socket::get_ref` replaces `zmq_tokio::Socket_get_mio_ref`. The new `get_ref` method returns the inner `&PollEvented<zmq_mio::Socket>`. `get_mio_ref` is now private, pending removal.
+- Future types now use `SocketRecv + AsyncRead` and `SocketSend + AsyncWrite` trait boundaries. Previously, the underlying `zmq_mio::Socket` from `PollEvented<zmq_mio::Socket>` was being used, instead of the poll-evented socket itself. The fix is made by implementing `SocketRecv` and `SocketSend` for `PollEvented<zmq_mio::Socket>`, and having the trait methods use the proper tokio polling-mechanisms (particularly using `need_read()` and `need_write()` from the poll-evented socket)..
+
+## [Unreleased] 0.0.1-future 2018-01-10
+### Added
 - `CHANGELOG.md`, is this file.
 - Example for `README.md` echoing a single message with futures.
 - Example for `README.md` echoing a multipart message with futures.
