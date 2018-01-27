@@ -194,6 +194,7 @@ pub extern crate zmq;
 extern crate zmq_mio;
 
 pub mod future;
+pub mod sink;
 pub mod stream;
 pub mod transport;
 
