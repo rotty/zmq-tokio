@@ -208,11 +208,11 @@ use tokio_core::reactor::{Handle, PollEvented};
 use tokio_io::{AsyncRead, AsyncWrite};
 
 use self::future::{ReceiveMessage, ReceiveMultipartMessage, SendMessage, SendMultipartMessage};
-/// The possible socket types.
-pub use io::Error;
-pub use zmq::{Message, SocketType, SNDMORE};
 
-pub use SocketType::{DEALER, PAIR, PUB, PULL, PUSH, REP, REQ, ROUTER, STREAM, SUB, XPUB, XSUB};
+pub use io::Error;
+pub use zmq::Message;
+/// Supported socket types are: `DEALER`, `PAIR`, `PUB`, `PULL`, `PUSH`, `REP`, `REQ`, `ROUTER`, `STREAM`, `SUB`, `XPUB`, `XSUB`.
+pub use zmq::SocketType::*;
 
 /// Wrapper for `zmq::Context`.
 #[derive(Clone, Default)]
@@ -229,7 +229,7 @@ impl Context {
     }
 
     /// Create a new ØMQ socket for the `tokio` framework.
-    pub fn socket(&self, typ: SocketType, handle: &Handle) -> io::Result<Socket> {
+    pub fn socket(&self, typ: zmq::SocketType, handle: &Handle) -> io::Result<Socket> {
         Ok(Socket::new(try!(self.inner.socket(typ)), handle)?)
     }
 
