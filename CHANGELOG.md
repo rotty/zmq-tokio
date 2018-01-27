@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Changed
 - Cleaned-up the prelude by removing piecewise re-exports from `zmq`, in favor of re-exporiting the whole crate.
+- Remove paragraph mentioning non-existing example in `README.md`.
 
 ### Fixed
 - `zmq_tokio::Socket::get_ref` replaces `zmq_tokio::Socket_get_mio_ref`. The new `get_ref` method returns the inner `&PollEvented<zmq_mio::Socket>`. `get_mio_ref` is now private, pending removal.
