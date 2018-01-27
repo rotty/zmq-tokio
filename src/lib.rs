@@ -209,6 +209,7 @@ use tokio_core::reactor::{Handle, PollEvented};
 use tokio_io::{AsyncRead, AsyncWrite};
 
 use self::future::{ReceiveMessage, ReceiveMultipartMessage, SendMessage, SendMultipartMessage};
+use self::stream::{MessageStream, MultipartMessageStream};
 
 pub use io::Error;
 pub use zmq::Message;
@@ -319,6 +320,16 @@ impl Socket {
 
     pub fn framed(self) -> SocketFramed<Self> {
         SocketFramed::new(self)
+    }
+
+    /// Returns a `Stream` of incoming one-part messages.
+    pub fn incoming<'a>(&'a self) -> MessageStream<'a, PollEvented<zmq_mio::Socket>> {
+        MessageStream::new(self.get_ref())
+    }
+
+    /// Returns a `Stream` of incoming multipart-messages.
+    pub fn incoming_multipart<'a>(&'a self) -> MultipartMessageStream<'a, PollEvented<zmq_mio::Socket>> {
+        MultipartMessageStream::new(self.get_ref())
     }
 }
 
