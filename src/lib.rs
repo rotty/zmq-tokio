@@ -190,7 +190,7 @@ extern crate log;
 extern crate mio;
 extern crate tokio_core;
 extern crate tokio_io;
-extern crate zmq;
+pub extern crate zmq;
 extern crate zmq_mio;
 
 pub mod future;
