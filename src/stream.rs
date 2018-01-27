@@ -43,7 +43,7 @@ where
     }
 }
 
-/// Single-message stream for sockets.
+/// Multipart-message stream for sockets.
 pub struct MultipartMessageStream<'a, T: 'a> {
     socket: &'a T,
 }
