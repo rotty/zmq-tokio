@@ -429,6 +429,12 @@ where
     }
 }
 
+/// Convert an `zmq::Socket` instance into `zmq_tokio::Socket`.
+pub fn convert_into_tokio_socket(orig: zmq::Socket, handle: &Handle) -> io::Result<Socket> {
+    let mio_socket = zmq_mio::Socket::new(orig);
+    Socket::new(mio_socket, handle)
+}
+
 /// API methods for sending messages with sockets.
 pub trait SocketSend {
     /// Send a message.
