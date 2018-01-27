@@ -195,6 +195,7 @@ extern crate zmq_mio;
 
 pub mod future;
 pub mod stream;
+pub mod transport;
 
 use std::io;
 use std::io::{Read, Write};
