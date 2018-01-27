@@ -211,6 +211,7 @@ use tokio_io::{AsyncRead, AsyncWrite};
 
 use self::future::{ReceiveMessage, ReceiveMultipartMessage, SendMessage, SendMultipartMessage};
 use self::stream::{MessageStream, MultipartMessageStream};
+use self::sink::{MessageSink, MultipartMessageSink};
 
 pub use io::Error;
 pub use zmq::Message;
@@ -331,6 +332,16 @@ impl Socket {
     /// Returns a `Stream` of incoming multipart-messages.
     pub fn incoming_multipart<'a>(&'a self) -> MultipartMessageStream<'a, PollEvented<zmq_mio::Socket>> {
         MultipartMessageStream::new(self.get_ref())
+    }
+
+    /// Returns a `Sink` for outgoing one-part messages.
+    pub fn outgoing<'a>(&'a self) -> MessageSink<'a, PollEvented<zmq_mio::Socket>> {
+        MessageSink::new(self.get_ref())
+    }
+
+    /// Returns a `Sink` for outgoing multipart-messages.
+    pub fn outgoing_multipart<'a>(&'a self) -> MultipartMessageSink<'a, PollEvented<zmq_mio::Socket>> {
+        MultipartMessageSink::new(self.get_ref())
     }
 }
 
