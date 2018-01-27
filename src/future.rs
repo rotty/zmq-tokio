@@ -3,6 +3,7 @@ use std::io;
 
 use futures::{Async, Future, Poll};
 
+use super::{SocketSend, SocketRecv};
 use super::{Message, Socket};
 
 /// A Future that sends a `Message` asynchronously. This is returned by `Socket::send`
@@ -22,7 +23,7 @@ impl<'a> Future for SendMessage<'a> {
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match self.socket.get_mio_ref().send(&*self.message, 0) {
+        match SocketSend::send(self.socket.get_ref(), &*self.message, 0) {
             Err(e) => {
                 if e.kind() == io::ErrorKind::WouldBlock {
                     Ok(Async::NotReady)
@@ -58,7 +59,7 @@ impl<'a> Future for SendMultipartMessage<'a> {
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match self.socket.get_mio_ref().send_multipart(&self.messages, 0) {
+        match SocketSend::send_multipart(self.socket.get_ref(), &self.messages, 0) {
             Err(e) => {
                 if e.kind() == io::ErrorKind::WouldBlock {
                     Ok(Async::NotReady)
@@ -88,7 +89,7 @@ impl<'a> Future for ReceiveMultipartMessage<'a> {
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match self.socket.get_mio_ref().recv_multipart(0) {
+        match SocketRecv::recv_multipart(self.socket.get_ref(), 0) {
             Err(e) => {
                 if e.kind() == io::ErrorKind::WouldBlock {
                     Ok(Async::NotReady)
@@ -120,7 +121,7 @@ impl<'a> Future for ReceiveMessage<'a> {
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match self.socket.get_mio_ref().recv_msg(0) {
+        match SocketRecv::recv_msg(self.socket.get_ref(), 0) {
             Err(e) => {
                 if e.kind() == io::ErrorKind::WouldBlock {
                     Ok(Async::NotReady)
