@@ -263,7 +263,13 @@ impl Socket {
 
     /// A reference to the underlying `zmq_mio::Socket`. Useful
     /// for building futures.
-    pub fn get_mio_ref(&self) -> &zmq_mio::Socket {
+    pub fn get_ref(&self) -> &PollEvented<zmq_mio::Socket> {
+        &self.io
+    }
+
+    /// A reference to the underlying `zmq_mio::Socket`. Useful
+    /// for building futures.
+    fn get_mio_ref(&self) -> &zmq_mio::Socket {
         self.io.get_ref()
     }
 
