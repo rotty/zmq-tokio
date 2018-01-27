@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 ### Added
+- `zmq_tokio::Socket::outgoing_multipart` returns a `MultiMessageSink`.
+- `zmq_tokio::Socket::outgoing` returns a `MessageSink`.
+- Added `MultipartMessageSink` for multi-part message sink.
+- Added `MessageSink` for a single-part message sink.
 - Added `zmq_tokio::convert_into_tokio_socket` function as a convenience for developers.
 - Added `examples/requester-multipart.rs`, a REQ client that sends a couple of multi-part messages, always getting a response.
 - Added `examples/responder-multipart.rs`, a REP server that listens for incoming multi-part messages, responding with another message.
@@ -13,7 +17,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Added `examples/responder.rs`, a REP server that listens for incoming single-part messages, responding with another message.
 - Added `zmq_tokio::transport::MessageTransport`, which implements both `Sink` and `Stream`, for handling single-part messages.
 - Added `zmq_tokio::transport::MultipartMessageTransport`, which implements both `Sink` and `Stream`, for handling multi-part messages.
-- Added `MultipartMessageStream` for single-part message streaming.
+- `zmq_tokio::Socket::incoming_multipart` returns a `MultiMessageStream`.
+- `zmq_tokio::Socket::incoming` returns a `MessageStream`.
+- Added `MultipartMessageStream` for multi-part message streaming.
 - Added `MessageStream` for single-part message streaming.
 - Defined the `SocketRecv` trait to have a method API for receiving messages with ZeroMQ.
 - Defined the `SocketSend` trait to have a method API for sending messages with ZeroMQ.
