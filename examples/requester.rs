@@ -2,7 +2,7 @@ extern crate futures;
 extern crate tokio_core;
 extern crate zmq_tokio;
 
-use futures::{Future, Stream, stream};
+use futures::{Future, Sink, Stream, stream};
 use tokio_core::reactor::Core;
 use zmq_tokio::zmq;
 use zmq_tokio::{Context};
@@ -18,14 +18,14 @@ fn main() {
     let msgs = vec!["hey you", "out there in the cold"];
     let client_requests = stream::iter_ok::<_, zmq_tokio::Error>(msgs)
         .and_then(|msg| {
-            (&client).send(msg)
-                .and_then(|_| {
-                    (&client).recv()
-                        .and_then(|msg| {
-                           println!("client got: {}", msg.as_str().unwrap());
-                            Ok(())
-                        })
-                })
+            client.outgoing().send(msg.into())
+        })
+        .and_then(|_| {
+            client.recv()
+        })
+        .and_then(|msg| {
+           println!("client got: {}", msg.as_str().unwrap());
+            Ok(())
         })
         .for_each(|_| {
             Ok(())
