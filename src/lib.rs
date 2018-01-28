@@ -194,17 +194,15 @@ pub extern crate zmq;
 extern crate zmq_mio;
 
 pub mod future;
+mod poll_evented;
 pub mod sink;
 pub mod stream;
 pub mod transport;
 
 use std::io;
 use std::io::{Read, Write};
-use std::ops::{Deref, DerefMut};
 
-use futures::{Async, AsyncSink, Poll, StartSend};
-use futures::stream::Stream;
-use futures::sink::Sink;
+use futures::Poll;
 
 use tokio_core::reactor::{Handle, PollEvented};
 use tokio_io::{AsyncRead, AsyncWrite};
@@ -217,6 +215,10 @@ pub use io::Error;
 pub use zmq::Message;
 /// Supported socket types are: `DEALER`, `PAIR`, `PUB`, `PULL`, `PUSH`, `REP`, `REQ`, `ROUTER`, `STREAM`, `SUB`, `XPUB`, `XSUB`.
 pub use zmq::SocketType::*;
+
+// Re-export custom transport to keep backwards-compatibility with examples
+// TODO: move this someplace else once the API is stable
+pub use self::transport::SocketFramed;
 
 /// Wrapper for `zmq::Context`.
 #[derive(Clone, Default)]
@@ -368,76 +370,6 @@ impl AsyncRead for Socket {}
 impl AsyncWrite for Socket {
     fn shutdown(&mut self) -> Poll<(), io::Error> {
         Ok(().into())
-    }
-}
-
-/// A custom transport type for `Socket`.
-pub struct SocketFramed<T> {
-    socket: T,
-}
-
-impl<T> SocketFramed<T>
-where
-    T: AsyncRead + AsyncWrite,
-{
-    fn new(socket: T) -> Self {
-        SocketFramed { socket: socket }
-    }
-}
-
-// TODO: Make this generic using a codec
-impl<T> Sink for SocketFramed<T>
-where
-    T: AsyncRead + AsyncWrite,
-{
-    type SinkItem = zmq::Message;
-    type SinkError = io::Error;
-
-    fn start_send(&mut self, item: zmq::Message) -> StartSend<zmq::Message, Self::SinkError> {
-        trace!("SocketFramed::start_send()");
-        match self.socket.write(item.deref()) {
-            Err(e) => {
-                if e.kind() == io::ErrorKind::WouldBlock {
-                    return Ok(AsyncSink::NotReady(item));
-                } else {
-                    return Err(e);
-                }
-            }
-            Ok(_) => {
-                return Ok(AsyncSink::Ready);
-            }
-        }
-    }
-
-    fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
-        Ok(Async::Ready(()))
-    }
-}
-
-// TODO: Make this generic using a codec
-impl<T> Stream for SocketFramed<T>
-where
-    T: AsyncRead,
-{
-    type Item = zmq::Message;
-    type Error = io::Error;
-
-    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        let mut buf = zmq::Message::with_capacity(1024);
-        trace!("SocketFramed::poll()");
-        match self.socket.read(buf.deref_mut()) {
-            Err(e) => {
-                if e.kind() == io::ErrorKind::WouldBlock {
-                    Ok(Async::NotReady)
-                } else {
-                    Err(e)
-                }
-            }
-            Ok(c) => {
-                buf = zmq::Message::from_slice(&buf[..c]);
-                Ok(Async::Ready(Some(buf)))
-            }
-        }
     }
 }
 
