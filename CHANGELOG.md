@@ -60,9 +60,6 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Changed
 - Replaced `&mut self` arguments that are no longer needed.
 - Updated cargo dependencies.
-- Refactored code into `poll_evented.rs`, for implementations of external types.
-- Refactored `SocketFramed` type into `transport` module.
-- Moved example code from `README.md`, into `examples/echo-pair.rs`, `examples/echo-pub-sub.rs`, and `examples/echo-push-pull-multipart.rs`.
 
 ## [0.0.1] - 2017-02-22
 ### Added
