@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 ### Added
+- Added `examples/README.md`, to describe the example files.
 - `zmq_tokio::Socket::outgoing_multipart` returns a `MultiMessageSink`.
 - `zmq_tokio::Socket::outgoing` returns a `MessageSink`.
 - Added `MultipartMessageSink` for multi-part message sink.
@@ -27,6 +28,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Changed
 - Cleaned-up the prelude by removing piecewise re-exports from `zmq`, in favor of re-exporiting the whole crate.
 - Remove paragraph mentioning non-existing example in `README.md`.
+- Refactored code into `poll_evented.rs`, for implementations of external types.
+- Refactored `SocketFramed` type into `transport` module.
+- Moved example code from `README.md`, into `examples/echo-pair.rs`, `examples/echo-pub-sub.rs`, and `examples/echo-push-pull-multipart.rs`.
 
 ### Fixed
 - `zmq_tokio::Socket::get_ref` replaces `zmq_tokio::Socket_get_mio_ref`. The new `get_ref` method returns the inner `&PollEvented<zmq_mio::Socket>`. `get_mio_ref` is now private, pending removal.
@@ -56,6 +60,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Changed
 - Replaced `&mut self` arguments that are no longer needed.
 - Updated cargo dependencies.
+- Refactored code into `poll_evented.rs`, for implementations of external types.
+- Refactored `SocketFramed` type into `transport` module.
+- Moved example code from `README.md`, into `examples/echo-pair.rs`, `examples/echo-pub-sub.rs`, and `examples/echo-push-pull-multipart.rs`.
 
 ## [0.0.1] - 2017-02-22
 ### Added
