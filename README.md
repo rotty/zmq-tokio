@@ -1,198 +1,114 @@
 ØMQ (ZeroMQ) for tokio
 ======================
 
-Run ØMQ sockets using `tokio` reactors, futures, etc.
+Run asynchronous ØMQ sockets with Rust's `tokio` framework.
+
+>   [Rust](https://www.rust-lang.org/) is a systems programming language that runs blazingly fast, prevents segfaults, and guarantees thread safety.
+
+>   [ZeroMQ](http://zeromq.org/) (also known as ØMQ, 0MQ, or zmq) looks like an embeddable networking library but acts like a concurrency framework. It gives you sockets that carry atomic messages across various transports like in-process, inter-process, TCP, and multicast. You can connect sockets N-to-N with patterns like fan-out, pub-sub, task distribution, and request-reply. It's fast enough to be the fabric for clustered products. Its asynchronous I/O model gives you scalable multicore applications, built as asynchronous message-processing tasks. It has a score of language APIs and runs on most operating systems. ZeroMQ is from iMatix and is LGPLv3 open source.
+
+>   [mio](https://github.com/carllerche/mio). Lightweight non-blocking IO.
+
+>   [futures](https://github.com/alexcrichton/futures-rs). Zero-cost futures and streams in Rust.
+
+>   [Tokio](https://tokio.rs/). A platform for writing fast networking code with Rust.
+
+
+This crate uses [rust-zmq](https://github.com/erickt/rust-zmq)'s bindings.
 
 Status
 ------
 
-This is the barely budding seed of providing access to
-[ZeroMQ](http://zeromq.org/) via the tokio async I/O abstraction.
+[![Build Status-dev](https://travis-ci.org/saibatizoku/zmq-tokio.svg?branch=saiba-dev)](https://travis-ci.org/saibatizoku/zmq-tokio)
 
-This crate uses [rust-zmq](https://github.com/erickt/rust-zmq)'s bindings.
+* [`zmq-futures` documentation](https://saibatizoku.github.io/zmq-tokio/zmq_futures/index.html)
+* [`zmq-mio` documentation](https://saibatizoku.github.io/zmq-tokio/zmq_mio/index.html)
+* [`zmq-tokio` documentation](https://saibatizoku.github.io/zmq-tokio/zmq_tokio/index.html)
+
+
+This is the barely budding seed of providing access to
+ZeroMQ via the tokio async I/O abstraction.
 
 This project is in its very infancy. Do not expect to be able to build
 something useful on top of this (yet). The API will certainly change
 wildly before approaching some kind of stability.
 
+The underlying library API is still not complete.
+
+Justification
+-------------
+
+ZeroMQ is a [fully-documented](http://zguide.zeromq.org/page:all) library that is meant to act as an _intelligent transport layer_ for messaging patterns. It's portable across OS platforms, as well as across programming languages.
+
+Rust's bindings for the ZeroMQ library, [rust-zmq](https://github.com/erickt/rust-zmq), wrap the C library into a very ergonomic implementation of **most** of the API.
+
+ZeroMQ's model is asynchronous by nature, however, it is handled automatically unless the `DONTWAIT` flag is specified when sending/receiving. This flag configures the socket to non-blocking mode, for which the user API states that there is a need for IO error handling, specifically for the case of `std::io::ErrorKind::WouldBlock`.
+
+So, to properly use ZMQ sockets asynchronously, it is necessary to have some higher-level code that can enforce correct handling of non-blocking messaging. In Rust, this is what `tokio` can do, with certain adaptations to the underlying ZMQ socket.
+
+These adaptions are carried out by `mio`, which helps build the bridge that connects the synchronous with the asynchronous, by adding non-blocking compatibility in the form of `std::io::Error`, as well as a polling mechanism that is meant to be cross-platform, and which is implemented via the `mio::Evented` trait. Since `rust-zmq` provides a `RawFd` reference to the ZMQ socket, and since `mio` provides the wrapper type `EventedFd`, making a ZMQ socket `mio`-compatible, is basically a matter of using the `DONTWAIT` flag on the socket, making sure that our functions and methods return `Result<_, io::Error>`, and wrap it into a new type that uses `EventedFd` to automatically make everything work for polling.
+
+Finally, `futures` in Rust, which aim to `provide a robust implementation of handling asynchronous computations, ergonomic composition and usage, and zero-cost abstractions over what would otherwise be written by hand`, are way that data is handled and processed in `tokio`.
+
+It can be argued that integrating ZeroMQ into the `tokio` ecosystem is a perfect match.
+
+It can be used to extend existing ZeroMQ infrastructure, as well as to create new network components that are guaranteed to be safe, fast, and concurrent. The Rust way.
+
+Goals
+-----
+
+- [X] The main goal, is to bring in ZeroMQ's messaging patterns, via their sockets, into the `tokio` ecosystem.
+- [X] To bridge the existing asynchronous support provided by ZeroMQ, via `rust-zmq`, with tokio's `polling mechanism.
+- [X] To create `Future`, `Stream`, and `Sink` types that blend in with the existing `zmq::Socket` API.
+- [X] To provide full technical documentation.
+- [ ] To provide end-user documentation.
+- [ ] To provide end-user examples.
+
+
+Usage
+=====
+
+For a typical crate, you need at least `futures`, `tokio\_core` and `zmq\_tokio`.
+
+Add this to your `Cargo.toml`:
+
+```cargo
+[dependencies]
+futures = "0.1"
+tokio_core = "0.1"
+zmq_tokio = { git = "https://github.com/saibatizoku/zmq-tokio.git" }
+```
+
+Then, on your crates main module, for example `src/main.rs`:
+
+```rust
+extern crate futures;
+extern crate tokio_core;
+extern crate zmq_tokio;
+
+use futures::Future;
+use tokio_core::reactor::Core;
+use zmq_tokio::{Context, Socket, PUB};
+
+
+fn main() {
+    // Start the ZMQ context and the tokio reactor.
+    let context = Context::new();
+    let mut reactor = Core::new().unwrap();
+
+    // Create a publisher socket, connected to a given address.
+    let socket = context.socket(PUB, &reactor.handle()).unwrap();
+    let _ = socket.connect("inproc://test").unwrap();
+
+    // Create a future that will send a simple message to subscribers.
+    let send_msg = socket.send(b"HELLO");
+
+    // Execute the future on the reactor.
+    let _ = core.run(run_pub).unwrap();
+}
+```
 
 Examples
 ========
 
-Sending and receiving simple messages with futures
---------------------------------------------------
-
-A PAIR of sockets is created. The `sender` socket sends
-a message, and the `receiver` gets it.
-
-Everything runs within on a tokio reactor.
-
-```rust
-extern crate futures;
-extern crate tokio_core;
-extern crate zmq_tokio;
-
-use futures::Future;
-use tokio_core::reactor::Core;
-
-use zmq_tokio::{Context, Socket, PAIR};
-
-const TEST_ADDR: &str = "inproc://test";
-
-
-fn main() {
-    let mut reactor = Core::new().unwrap();
-    let context = Context::new();
-
-    let recvr = context.socket(PAIR, &reactor.handle()).unwrap();
-    let _ = recvr.bind(TEST_ADDR).unwrap();
-
-    let sendr = context.socket(PAIR, &reactor.handle()).unwrap();
-    let _ = sendr.connect(TEST_ADDR).unwrap();
-
-    // Step 1: send any type implementing `Into<zmq::Message>`,
-    //         meaning `&[u8]`, `Vec<u8>`, `String`, `&str`,
-    //         and `zmq::Message` itself.
-    let send_future = sendr.send("this message will be sent");
-
-    // Step 2: receive the message on the pair socket
-    let recv_msg = send_future.and_then(|_| {
-        recvr.recv()
-    });
-
-    // Step 3: process the message and exit
-    let process_msg = recv_msg.and_then(|msg| {
-        assert_eq!(msg.as_str(), Some("this message will be sent"));
-        Ok(())
-    });
-
-    let _ = reactor.run(process_msg).unwrap();
-
-    // Exit our program, playing nice.
-    ::std::process::exit(0);
-}
-```
-
-Sending and receiving multi-part messages with futures
-------------------------------------------------------
-
-This time we use `PUSH` and `PULL` sockets to move multi-part messages.
-
-Remember that ZMQ will either send all parts or none at all.
-Save goes for receiving.
-
-```rust
-extern crate futures;
-extern crate tokio_core;
-extern crate zmq_tokio;
-
-use futures::Future;
-use tokio_core::reactor::Core;
-
-use zmq_tokio::{Context, Socket, PULL, PUSH};
-
-const TEST_ADDR: &str = "inproc://test";
-
-fn main() {
-    let mut reactor = Core::new().unwrap();
-    let context = Context::new();
-
-    let recvr = context.socket(PULL, &reactor.handle()).unwrap();
-    let _ = recvr.bind(TEST_ADDR).unwrap();
-
-    let sendr = context.socket(PUSH, &reactor.handle()).unwrap();
-    let _ = sendr.connect(TEST_ADDR).unwrap();
-
-    let msgs: Vec<Vec<u8>> = vec![b"hello".to_vec(), b"goodbye".to_vec()];
-    // Step 1: send a vector of byte-vectors, `Vec<Vec<u8>>`
-    let send_future = sendr.send_multipart(msgs);
-
-    // Step 2: receive the complete multi-part message
-    let recv_msg = send_future.and_then(|_| {
-        recvr.recv_multipart()
-    });
-
-    // Step 3: process the message and exit
-    let process_msg = recv_msg.and_then(|msgs| {
-        assert_eq!(msgs[0].as_str(), Some("hello"));
-        assert_eq!(msgs[1].as_str(), Some("goodbye"));
-        Ok(())
-    });
-
-    let _ = reactor.run(process_msg).unwrap();
-
-    // Exit our program, playing nice.
-    ::std::process::exit(0);
-}
-```
-
-Manual use of tokio tranports with `Sink` and `Stream`
-------------------------------------------------------
-
-This time, we use `PUB`-`SUB` sockets to send and receive a message.
-
-```rust
-extern crate futures;
-extern crate tokio_core;
-extern crate zmq_tokio;
-
-use futures::{Future, Sink, Stream, stream};
-use tokio_core::reactor::Core;
-
-use zmq_tokio::{Context, Message, Socket, PUB, SUB};
-
-const TEST_ADDR: &str = "inproc://test";
-
-
-fn main() {
-    let mut reactor = Core::new().unwrap();
-    let context = Context::new();
-
-    let recvr = context.socket(SUB, &reactor.handle()).unwrap();
-    let _ = recvr.bind(TEST_ADDR).unwrap();
-    let _ = recvr.set_subscribe(b"").unwrap();
-
-    let sendr = context.socket(PUB, &reactor.handle()).unwrap();
-    let _ = sendr.connect(TEST_ADDR).unwrap();
-
-
-    let (_, recvr_split_stream) = recvr.framed().split();
-    let (sendr_split_sink, _) = sendr.framed().split();
-
-    let msg = Message::from_slice(b"hello there");
-
-    // Step 1: start a stream with only one item.
-    let start_stream = stream::iter_ok::<_, ()>(vec![(sendr_split_sink, recvr_split_stream, msg)]);
-
-    // Step 2: send the message
-    let send_msg = start_stream.and_then(|(sink, stream, msg)| {
-            // send a message to the receiver.
-            // return a future with the receiver
-            let _ = sink.send(msg);
-            Ok(stream)
-        });
-
-    // Step 3: read the message
-    let fetch_msg = send_msg.for_each(|stream| {
-            // process the first response that the
-            // receiver gets.
-            // Assert that it equals the message sent
-            // by the sender.
-            // returns `Ok(())` when the stream ends.
-            let _ = stream.into_future().and_then(|(response, _)| {
-                match response {
-                    Some(msg) => assert_eq!(msg.as_str(), Some("hello there")),
-                    None => panic!("expected a response"),
-                }
-                Ok(())
-            });
-            Ok(())
-        });
-
-    // Run the stream
-    let _ = reactor.run(fetch_msg).unwrap();
-
-    // Exit our program, playing nice.
-    ::std::process::exit(0);
-}
-```
+Please consult the [examples](./examples) directory.
