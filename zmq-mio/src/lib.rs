@@ -235,6 +235,12 @@ impl Socket {
         r
     }
 
+    /// Return true if there are more frames of a multipart message to receive.
+    pub fn get_rcvmore(&self) -> io::Result<bool> {
+        let r = self.inner.get_rcvmore().map_err(|e| e.into());
+        r
+    }
+
     /// Read a single `zmq::Message` from the socket.
     /// Any flags set will be combined with `zmq::DONTWAIT`, which is
     /// needed for non-blocking mode. The internal `zmq::Error::EAGAIN`

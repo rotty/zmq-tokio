@@ -190,28 +190,35 @@ extern crate log;
 extern crate mio;
 extern crate tokio_core;
 extern crate tokio_io;
-extern crate zmq;
+pub extern crate zmq;
 extern crate zmq_mio;
 
 pub mod future;
+mod poll_evented;
+pub mod sink;
+pub mod stream;
+pub mod transport;
 
 use std::io;
 use std::io::{Read, Write};
-use std::ops::{Deref, DerefMut};
 
-use futures::{Async, AsyncSink, Poll, StartSend};
-use futures::stream::Stream;
-use futures::sink::Sink;
+use futures::Poll;
 
 use tokio_core::reactor::{Handle, PollEvented};
 use tokio_io::{AsyncRead, AsyncWrite};
 
 use self::future::{ReceiveMessage, ReceiveMultipartMessage, SendMessage, SendMultipartMessage};
-/// The possible socket types.
-pub use io::Error;
-pub use zmq::{Message, SocketType, SNDMORE};
+use self::stream::{MessageStream, MultipartMessageStream};
+use self::sink::{MessageSink, MultipartMessageSink};
 
-pub use SocketType::{DEALER, PAIR, PUB, PULL, PUSH, REP, REQ, ROUTER, STREAM, SUB, XPUB, XSUB};
+pub use io::Error;
+pub use zmq::Message;
+/// Supported socket types are: `DEALER`, `PAIR`, `PUB`, `PULL`, `PUSH`, `REP`, `REQ`, `ROUTER`, `STREAM`, `SUB`, `XPUB`, `XSUB`.
+pub use zmq::SocketType::*;
+
+// Re-export custom transport to keep backwards-compatibility with examples
+// TODO: move this someplace else once the API is stable
+pub use self::transport::SocketFramed;
 
 /// Wrapper for `zmq::Context`.
 #[derive(Clone, Default)]
@@ -228,7 +235,7 @@ impl Context {
     }
 
     /// Create a new ØMQ socket for the `tokio` framework.
-    pub fn socket(&self, typ: SocketType, handle: &Handle) -> io::Result<Socket> {
+    pub fn socket(&self, typ: zmq::SocketType, handle: &Handle) -> io::Result<Socket> {
         Ok(Socket::new(try!(self.inner.socket(typ)), handle)?)
     }
 
@@ -261,7 +268,13 @@ impl Socket {
 
     /// A reference to the underlying `zmq_mio::Socket`. Useful
     /// for building futures.
-    pub fn get_mio_ref(&self) -> &zmq_mio::Socket {
+    pub fn get_ref(&self) -> &PollEvented<zmq_mio::Socket> {
+        &self.io
+    }
+
+    /// A reference to the underlying `zmq_mio::Socket`. Useful
+    /// for building futures.
+    fn get_mio_ref(&self) -> &zmq_mio::Socket {
         self.io.get_ref()
     }
 
@@ -312,6 +325,26 @@ impl Socket {
     pub fn framed(self) -> SocketFramed<Self> {
         SocketFramed::new(self)
     }
+
+    /// Returns a `Stream` of incoming one-part messages.
+    pub fn incoming<'a>(&'a self) -> MessageStream<'a, PollEvented<zmq_mio::Socket>> {
+        MessageStream::new(self.get_ref())
+    }
+
+    /// Returns a `Stream` of incoming multipart-messages.
+    pub fn incoming_multipart<'a>(&'a self) -> MultipartMessageStream<'a, PollEvented<zmq_mio::Socket>> {
+        MultipartMessageStream::new(self.get_ref())
+    }
+
+    /// Returns a `Sink` for outgoing one-part messages.
+    pub fn outgoing<'a>(&'a self) -> MessageSink<'a, PollEvented<zmq_mio::Socket>> {
+        MessageSink::new(self.get_ref())
+    }
+
+    /// Returns a `Sink` for outgoing multipart-messages.
+    pub fn outgoing_multipart<'a>(&'a self) -> MultipartMessageSink<'a, PollEvented<zmq_mio::Socket>> {
+        MultipartMessageSink::new(self.get_ref())
+    }
 }
 
 unsafe impl Send for Socket {}
@@ -340,72 +373,58 @@ impl AsyncWrite for Socket {
     }
 }
 
-/// A custom transport type for `Socket`.
-pub struct SocketFramed<T> {
-    socket: T,
+/// Convert an `zmq::Socket` instance into `zmq_tokio::Socket`.
+pub fn convert_into_tokio_socket(orig: zmq::Socket, handle: &Handle) -> io::Result<Socket> {
+    let mio_socket = zmq_mio::Socket::new(orig);
+    Socket::new(mio_socket, handle)
 }
 
-impl<T> SocketFramed<T>
-where
-    T: AsyncRead + AsyncWrite,
-{
-    fn new(socket: T) -> Self {
-        SocketFramed { socket: socket }
-    }
+/// API methods for sending messages with sockets.
+pub trait SocketSend {
+    /// Send a message.
+    ///
+    /// Due to the provided From implementations, this works for `&[u8]`, `Vec<u8>` and `&str`,
+    /// as well as on `Message` itself.
+    fn send<T>(&self, T, i32) -> io::Result<()>
+    where
+        T: zmq::Sendable;
+    /// Sends a multipart-message.
+    fn send_multipart<I, T>(&self, I, i32) -> io::Result<()>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<Message>;
 }
 
-// TODO: Make this generic using a codec
-impl<T> Sink for SocketFramed<T>
-where
-    T: AsyncRead + AsyncWrite,
-{
-    type SinkItem = zmq::Message;
-    type SinkError = io::Error;
+/// API methods for receiving messages with sockets.
+pub trait SocketRecv {
+    /// Return true if there are more frames of a multipart message to receive.
+    fn get_rcvmore(&self) -> io::Result<bool>;
 
-    fn start_send(&mut self, item: zmq::Message) -> StartSend<zmq::Message, Self::SinkError> {
-        trace!("SocketFramed::start_send()");
-        match self.socket.write(item.deref()) {
-            Err(e) => {
-                if e.kind() == io::ErrorKind::WouldBlock {
-                    return Ok(AsyncSink::NotReady(item));
-                } else {
-                    return Err(e);
-                }
-            }
-            Ok(_) => {
-                return Ok(AsyncSink::Ready);
-            }
-        }
-    }
+    /// Receive a message into a `Message`. The length passed to `zmq_msg_recv` is the length
+    /// of the buffer.
+    fn recv(&self, &mut Message, i32) -> io::Result<()>;
 
-    fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
-        Ok(Async::Ready(()))
-    }
-}
+    /// Receive bytes into a slice. The length passed to `zmq_recv` is the length of the slice. The
+    /// return value is the number of bytes in the message, which may be larger than the length of
+    /// the slice, indicating truncation.
+    fn recv_into(&self, &mut [u8], i32) -> io::Result<usize>;
 
-// TODO: Make this generic using a codec
-impl<T> Stream for SocketFramed<T>
-where
-    T: AsyncRead,
-{
-    type Item = zmq::Message;
-    type Error = io::Error;
+    /// Receive a message into a fresh `Message`.
+    fn recv_msg(&self, i32) -> io::Result<Message>;
 
-    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        let mut buf = zmq::Message::with_capacity(1024);
-        trace!("SocketFramed::poll()");
-        match self.socket.read(buf.deref_mut()) {
-            Err(e) => {
-                if e.kind() == io::ErrorKind::WouldBlock {
-                    Ok(Async::NotReady)
-                } else {
-                    Err(e)
-                }
-            }
-            Ok(c) => {
-                buf = zmq::Message::from_slice(&buf[..c]);
-                Ok(Async::Ready(Some(buf)))
-            }
-        }
-    }
+    /// Receive a message as a byte vector.
+    fn recv_bytes(&self, i32) -> io::Result<Vec<u8>>;
+
+    /// Receive a `String` from the socket.
+    ///
+    /// If the received message is not valid UTF-8, it is returned as the original `Vec` in the `Err`
+    /// part of the inner result.
+    fn recv_string(&self, i32) -> io::Result<Result<String, Vec<u8>>>;
+
+    /// Receive a multipart message from the socket.
+    ///
+    /// Note that this will allocate a new vector for each message part; for many applications it
+    /// will be possible to process the different parts sequentially and reuse allocations that
+    /// way.
+    fn recv_multipart(&self, i32) -> io::Result<Vec<Vec<u8>>>;
 }
