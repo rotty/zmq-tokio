@@ -11,7 +11,10 @@ readme = "README.md"
 mio = "0.6.0"
 tokio-core = "0.1"
 futures = "0.1.3"
-zmq = { git = "https://github.com/erickt/rust-zmq" }
+zmq = { path = "/home/rotty/src/crates/zmq" }
 log = "0.3"
 env_logger = "0.3"
 zmq-mio = { path = "zmq-mio" }
+
+#[replace]
+#"zmq:0.9.0" = { path = "/home/rotty/src/rust-zmq" }

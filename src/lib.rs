@@ -9,7 +9,7 @@ extern crate tokio_core;
 extern crate zmq;
 extern crate zmq_mio;
 
-pub mod codec;
+mod codec;
 
 use std::io;
 
@@ -21,7 +21,7 @@ use tokio_core::reactor::{Handle, PollEvented};
 
 use zmq::Message;
 
-use codec::MessageCodec;
+pub use codec::MessageCodec;
 
 fn is_wouldblock<T>(r: &io::Result<T>) -> bool {
     match *r {

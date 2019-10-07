@@ -54,13 +54,16 @@ fn stream_server(rep: Socket, count: u64) -> BoxFuture<(), io::Error> {
 
 fn stream_client(req: Socket, count: u64) -> BoxFuture<(), io::Error> {
     stream::iter((0..count).map(Ok)).fold(req.framed(NullCodec).split(), move |(requests, responses), i| {
-        requests.send(format!("Hello {}", i).as_str().into()).and_then(move |requests| {
+        let content = format!("Hello {}", i);
+        let request = content.as_str().into();
+        requests.send(request).and_then(move |requests| {
             trace!("request sent!");
-            let show_reply = responses.into_future().and_then(move |(reply, rest)| {
+            let test_reply = responses.into_future().and_then(move |(reply, rest)| {
                 trace!("reply: {:?}", reply);
+                assert_eq!(reply.map(|msgs| Vec::from(&msgs[0][..])), Some(Vec::from(content.as_bytes())));
                 Ok(rest)
             });
-            show_reply.map(|responses| (requests, responses)).map_err(|(e, _)| e)
+            test_reply.map(|responses| (requests, responses)).map_err(|(e, _)| e)
         })
     }).map(|_| {}).boxed()
 }
